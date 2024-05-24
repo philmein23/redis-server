@@ -5,7 +5,7 @@ const net = std.net;
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer gpa.deinit();
+    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     try stdout.print("Logs from your program will appear here!", .{});
