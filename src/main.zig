@@ -46,10 +46,10 @@ pub fn main() !void {
     var client = try server.accept();
     defer client.stream.close();
 
-    stdout.print("Connection received! {} is sending data.\n", .{client.address});
+    try stdout.print("Connection received! {} is sending data.\n", .{client.address});
 
     const message = try client.stream.reader().readAllAlloc(allocator, 1024);
     defer allocator.free(message);
 
-    stdout.print("{} says {s}\n", .{ client.address, message });
+    try stdout.print("{} says {s}\n", .{ client.address, message });
 }
