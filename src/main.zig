@@ -25,7 +25,7 @@ pub fn main() !void {
         client.stream.close();
 
         const message = try client.stream.reader().readAllAlloc(allocator, 1024);
-        defer allocator.deinit(message);
+        defer allocator.free(message);
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
 
