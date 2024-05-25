@@ -18,15 +18,15 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    // while (true) {
-    const connection = try server.accept();
+    while (true) {
+        const connection = try server.accept();
 
-    try stdout.print("Connection received {} is sending data", .{connection.address});
-    connection.stream.close();
+        try stdout.print("Connection received {} is sending data", .{connection.address});
+        connection.stream.close();
 
-    const message = connection.stream.reader().readAllAlloc(allocator, 1024);
-    stdout.print("{} says {s}\n", .{ connection.address, message });
-    // }
+        const message = try connection.stream.reader().readAllAlloc(allocator, 1024);
+        stdout.print("{} says {s}\n", .{ connection.address, message });
+    }
 
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     // defer _ = gpa.deinit();
