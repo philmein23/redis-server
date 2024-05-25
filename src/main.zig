@@ -24,10 +24,11 @@ pub fn main() !void {
         try stdout.print("Connection received {} is sending data", .{client.address});
         client.stream.close();
 
-        const message = try client.stream.reader().readAllAlloc(allocator, 1024);
+        const expected = "PONG";
+        const message = try client.stream.reader().readAllAlloc(allocator, expected.len);
         defer allocator.free(message);
 
-        const is_equal = std.mem.eql(u8, message, "PONG");
+        const is_equal = std.mem.eql(u8, message, expected);
 
         if (is_equal) {
             try server.stream.writeAll("+PONG\r\n");
