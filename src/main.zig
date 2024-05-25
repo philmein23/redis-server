@@ -19,7 +19,7 @@ pub fn main() !void {
     defer server.deinit();
 
     while (true) {
-        const client = try server.accept();
+        var client = try server.accept();
 
         try stdout.print("Connection received {} is sending data", .{client.address});
         client.stream.close();
