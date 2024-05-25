@@ -25,6 +25,7 @@ pub fn main() !void {
         connection.stream.close();
 
         const message = try connection.stream.reader().readAllAlloc(allocator, 1024);
+        defer allocator.deinit(message);
         stdout.print("{} says {s}\n", .{ connection.address, message });
     }
 
