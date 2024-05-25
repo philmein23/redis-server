@@ -30,7 +30,7 @@ pub fn main() !void {
         const is_equal = std.mem.eql(u8, message, "PONG");
 
         if (is_equal) {
-            server.stream.writeAll("+PONG\r\n");
+            try server.stream.writeAll("+PONG\r\n");
         }
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
