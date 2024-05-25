@@ -26,6 +26,13 @@ pub fn main() !void {
 
         const message = try client.stream.reader().readAllAlloc(allocator, 1024);
         defer allocator.free(message);
+
+        const is_equal = std.mem.eql(message, "PONG");
+
+        if (is_equal) {
+            server.stream.writeAll("+PONG\r\n");
+        }
+
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
 
