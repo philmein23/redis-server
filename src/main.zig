@@ -41,7 +41,7 @@ pub fn main() !void {
     defer server.deinit();
 
     const addr = server.listen_address;
-    stdout.print("Listening on {}, access this port to end the program\n", .{addr.getPort()});
+    try stdout.print("Listening on {}, access this port to end the program\n", .{addr.getPort()});
 
     var client = try server.accept();
     defer client.stream.close();
