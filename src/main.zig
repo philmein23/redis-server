@@ -39,7 +39,7 @@ pub fn main() !void {
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
 
-        client.stream.close();
+        // client.stream.close();
 
         // try stdout.print("About to close....{}\n", .{client.address});
 
