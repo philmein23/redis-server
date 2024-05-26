@@ -8,7 +8,7 @@ pub fn main() !void {
     // defer _ = gpa.deinit();
     // const allocator = gpa.allocator();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
-    try stdout.print("Logs from your program will appear here!", .{});
+    try stdout.print("Logs from your program will appear here!\n", .{});
 
     // Uncomment this block to pass the first stage
     const address = try net.Address.resolveIp("127.0.0.1", 6379);
@@ -20,20 +20,24 @@ pub fn main() !void {
 
     var count: u32 = 1;
     while (true) {
-        var client = try server.accept();
+        // var client = try server.accept();
+        //
+        // try stdout.print("Connection received {} is sending data\n", .{client.address});
+        //
+        // const message = "+PONG\r\n";
+        // _ = try client.stream.write(message);
 
-        try stdout.print("Connection received {} is sending data\n", .{client.address});
+        for (0..2) |_| {
+            var client = try server.accept();
 
-        const message = "+PONG\r\n";
-        _ = try client.stream.write(message);
+            try stdout.print("Connection received {} is sending data\n", .{client.address});
 
-        count += 1;
-        client = try server.accept();
-
-        if (count == 2) {
-            try stdout.print("About to close....{}\n", .{client.address});
+            const message = "+PONG\r\n";
+            _ = try client.stream.write(message);
             client.stream.close();
         }
+
+        // try stdout.print("About to close....{}\n", .{client.address});
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
