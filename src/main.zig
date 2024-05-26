@@ -30,7 +30,7 @@ pub fn main() !void {
         count += 1;
 
         if (count == 2) {
-            try stdout.print("About to close....");
+            try stdout.print("About to close....{}", .{client.address});
             client.stream.close();
         }
 
