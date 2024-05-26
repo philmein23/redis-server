@@ -18,7 +18,7 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var count: comptime_int = 1;
+    var count: u32 = 1;
     while (true) {
         var client = try server.accept();
 
