@@ -33,14 +33,12 @@ pub fn main() !void {
         // _ = try client.stream.read(buffer);
 
         // const m = try client.stream.reader().readAllAlloc(allocator, 1024);
-        while (try client.stream.reader().readAllAlloc(allocator, 1024).len) |m| {
+        while (try client.stream.reader().readAllAlloc(allocator, 1024)) |m| {
             defer allocator.free(m);
-            if (m > 0) {
-                const message = "+PONG\r\n";
-                _ = try client.stream.write(message);
+            const message = "+PONG\r\n";
+            _ = try client.stream.write(message);
 
-                try stdout.print("{} says {s}\n", .{ client.address, message });
-            }
+            try stdout.print("{} says {s}\n", .{ client.address, message });
         }
     }
 }
