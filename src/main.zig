@@ -18,6 +18,7 @@ pub fn main() !void {
     });
     defer server.deinit();
 
+    var count = 1;
     while (true) {
         var client = try server.accept();
 
@@ -25,7 +26,12 @@ pub fn main() !void {
 
         const message = "+PONG\r\n";
         _ = try client.stream.write(message);
-        client.stream.close();
+
+        count += 1;
+
+        if (count == 2) {
+            client.stream.close();
+        }
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
