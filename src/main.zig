@@ -35,10 +35,10 @@ pub fn main() !void {
             const message = "+PONG\r\n";
             _ = try client.stream.write(message);
             client.stream.close();
+            try stdout.print("{} says {s}\n", .{ client.address, message });
         }
 
         // try stdout.print("About to close....{}\n", .{client.address});
 
-        try stdout.print("{} says {s}\n", .{ client.address, message });
     }
 }
