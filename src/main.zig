@@ -4,9 +4,9 @@ const net = std.net;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // const allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     try stdout.print("Logs from your program will appear here!\n", .{});
 
@@ -19,7 +19,6 @@ pub fn main() !void {
     defer server.deinit();
 
     while (true) {
-        const buffer = &.{};
         // var client = try server.accept();
         //
         // try stdout.print("Connection received {} is sending data\n", .{client.address});
@@ -28,16 +27,18 @@ pub fn main() !void {
         // _ = try client.stream.write(message);
 
         var client = try server.accept();
-        for (0..1) |count| {
-            try stdout.print("Connection received {} {} is sending data\n", .{ client.address, count });
+        try stdout.print("Connection received {} is sending data\n", .{client.address});
 
-            _ = try client.stream.read(buffer);
+        // _ = try client.stream.read(buffer);
 
-            const message = "+PONG\r\n";
-            _ = try client.stream.write(message);
+        const m = try client.stream.reader().readAllAlloc(allocator, 1024);
+        defer allocator.free(m);
 
-            try stdout.print("{} says {s}\n", .{ client.address, message });
-        }
+        const message = "+PONG\r\n";
+        _ = try client.stream.write(message);
+
+        try stdout.print("{} says {s}\n", .{ client.address, message });
+
         client.stream.close();
 
         // try stdout.print("About to close....{}\n", .{client.address});
