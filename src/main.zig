@@ -19,6 +19,7 @@ pub fn main() !void {
     defer server.deinit();
 
     while (true) {
+        const buffer = &.{};
         // var client = try server.accept();
         //
         // try stdout.print("Connection received {} is sending data\n", .{client.address});
@@ -29,6 +30,8 @@ pub fn main() !void {
         var client = try server.accept();
         for (0..1) |count| {
             try stdout.print("Connection received {} {} is sending data\n", .{ client.address, count });
+
+            _ = try client.stream.read(buffer);
 
             const message = "+PONG\r\n";
             _ = try client.stream.write(message);
