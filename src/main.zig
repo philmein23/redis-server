@@ -25,7 +25,7 @@ pub fn main() !void {
         client.stream.close();
 
         const expected = "PONG";
-        const message = try client.stream.reader().readAllAlloc(allocator, expected.len);
+        const message = try client.stream.reader().read(allocator, expected.len);
         defer allocator.free(message);
 
         try stdout.print("Message received {s}", .{message});
