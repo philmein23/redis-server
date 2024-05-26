@@ -29,7 +29,7 @@ pub fn main() !void {
         // defer allocator.free(message);
 
         const message = "+PONG\r\n";
-        _ = try server.stream.write(message);
+        _ = try client.stream.write(message);
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
