@@ -26,12 +26,13 @@ pub fn main() !void {
 
         const message = "+PONG\r\n";
         _ = try client.stream.write(message);
-        client.stream.close();
 
         count += 1;
+        client = try server.accept();
 
         if (count == 2) {
             try stdout.print("About to close....{}\n", .{client.address});
+            client.stream.close();
         }
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
