@@ -27,21 +27,18 @@ pub fn main() !void {
         // _ = try client.stream.write(message);
 
         var client = try server.accept();
+        defer client.stream.close();
         try stdout.print("Connection received {} is sending data\n", .{client.address});
 
         // _ = try client.stream.read(buffer);
 
-        const m = try client.stream.reader().readAllAlloc(allocator, 1024);
-        defer allocator.free(m);
+        // const m = try client.stream.reader().readAllAlloc(allocator, 1024);
+        while (try client.stream.reader().readAllAlloc(allocator, 1024)) |m| {
+            defer allocator.free(m);
+            const message = "+PONG\r\n";
+            _ = try client.stream.write(message);
 
-        const message = "+PONG\r\n";
-        _ = try client.stream.write(message);
-
-        try stdout.print("{} says {s}\n", .{ client.address, message });
-
-        // client.stream.close();
-
-        // try stdout.print("About to close....{}\n", .{client.address});
-
+            try stdout.print("{} says {s}\n", .{ client.address, message });
+        }
     }
 }
