@@ -27,8 +27,8 @@ pub fn main() !void {
         // _ = try client.stream.write(message);
 
         var client = try server.accept();
-        for (0..1) |_| {
-            try stdout.print("Connection received {} is sending data\n", .{client.address});
+        for (0..1) |count| {
+            try stdout.print("Connection received {} {} is sending data\n", .{ client.address, count });
 
             const message = "+PONG\r\n";
             _ = try client.stream.write(message);
