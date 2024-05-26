@@ -22,7 +22,6 @@ pub fn main() !void {
         var client = try server.accept();
 
         try stdout.print("Connection received {} is sending data", .{client.address});
-        client.stream.close();
 
         // const expected = "PONG";
         // const message = try client.stream.reader().readAllAlloc(allocator, expected.len);
@@ -30,6 +29,7 @@ pub fn main() !void {
 
         const message = "+PONG\r\n";
         _ = try client.stream.write(message);
+        client.stream.close();
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
