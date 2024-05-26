@@ -22,16 +22,16 @@ pub fn main() !void {
     while (true) {
         var client = try server.accept();
 
-        try stdout.print("Connection received {} is sending data", .{client.address});
+        try stdout.print("Connection received {} is sending data\n", .{client.address});
 
         const message = "+PONG\r\n";
         _ = try client.stream.write(message);
+        client.stream.close();
 
         count += 1;
 
         if (count == 2) {
-            try stdout.print("About to close....{}", .{client.address});
-            client.stream.close();
+            try stdout.print("About to close....{}\n", .{client.address});
         }
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
