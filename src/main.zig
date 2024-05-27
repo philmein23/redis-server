@@ -35,7 +35,7 @@ pub fn main() !void {
     // defer allocator.free(buffer);
     var buffer: [1024]u8 = undefined;
 
-    while (reader.read(&buffer) > 0) {
+    while (try reader.read(&buffer) > 0) {
         const message = "+PONG\r\n";
         _ = try client.stream.writeAll(message);
 
