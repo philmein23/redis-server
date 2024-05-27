@@ -30,10 +30,12 @@ pub fn main() !void {
 
     // _ = try client.stream.read(buffer);
 
-    const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-    defer allocator.free(buffer);
+    // const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
+    const reader = client.stream.reader();
+    // defer allocator.free(buffer);
+    var buffer: [1024]u8 = undefined;
 
-    while (buffer.len > 0) {
+    while (reader.read(&buffer) > 0) {
         const message = "+PONG\r\n";
         _ = try client.stream.writeAll(message);
 
