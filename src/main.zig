@@ -32,7 +32,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
     const reader = client.stream.reader();
-    // defer allocator.free(buffer);
+    defer allocator.free(buffer);
     // var buffer: [1024]u8 = undefined
 
     const bytes_have_been_read = try reader.read(buffer);
