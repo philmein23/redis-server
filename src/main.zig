@@ -41,5 +41,7 @@ pub fn main() !void {
 
             try stdout.print("{} says {s}\n", .{ client.address, message });
         }
+
+        if (buffer.len == 0) break;
     }
 }
