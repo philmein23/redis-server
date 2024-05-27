@@ -36,7 +36,7 @@ pub fn main() !void {
 
         while (buffer.len > 0) {
             const message = "+PONG\r\n";
-            _ = try client.stream.write(message);
+            _ = try client.stream.writeAll(message);
 
             try stdout.print("{} says {s}\n", .{ client.address, message });
         }
