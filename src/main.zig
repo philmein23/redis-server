@@ -4,9 +4,6 @@ const net = std.net;
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // const allocator = gpa.allocator();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     try stdout.print("Logs from your program will appear here!\n", .{});
 
@@ -30,12 +27,17 @@ pub fn main() !void {
 
     // _ = try client.stream.read(buffer);
 
-    // const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-    const reader = client.stream.reader();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
+    // const reader = client.stream.reader();
     // defer allocator.free(buffer);
-    var buffer: [1024]u8 = undefined;
+    // var buffer: [1024]u8 = undefined
 
-    while (try reader.read(&buffer) > 0) {
+    // const bytes_have_been_read = try reader.read(&buffer);
+
+    while (buffer.len > 0) {
         const message = "+PONG\r\n";
         _ = try client.stream.writeAll(message);
 
