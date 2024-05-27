@@ -27,7 +27,6 @@ pub fn main() !void {
         // _ = try client.stream.write(message);
 
         var client = try server.accept();
-        client.stream.close();
         try stdout.print("Connection received {} is sending data\n", .{client.address});
 
         // _ = try client.stream.read(buffer);
