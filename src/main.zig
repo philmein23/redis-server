@@ -30,21 +30,19 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    while (true) {
-        const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-        defer allocator.free(buffer);
-        const reader = client.stream.reader();
-        // var buffer: [1024]u8 = undefined;
+    var buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
+    defer allocator.free(buffer);
+    const reader = client.stream.reader();
+    // var buffer: [1024]u8 = undefined;
 
-        const bytes_have_been_read = try reader.read(buffer);
+    const bytes_have_been_read = try reader.read(&buffer);
 
-        while (bytes_have_been_read > 0) {
-            const message = "+PONG\r\n";
-            _ = try client.stream.writeAll(message);
+    while (bytes_have_been_read > 0) {
+        const message = "+PONG\r\n";
+        _ = try client.stream.writeAll(message);
 
-            try stdout.print("{} says {s}\n", .{ client.address, message });
-        }
-
-        client.stream.close();
+        try stdout.print("{} says {s}\n", .{ client.address, message });
     }
+
+    client.stream.close();
 }
