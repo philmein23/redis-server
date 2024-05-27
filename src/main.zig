@@ -18,29 +18,27 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    while (true) {
-        // var client = try server.accept();
-        //
-        // try stdout.print("Connection received {} is sending data\n", .{client.address});
-        //
-        // const message = "+PONG\r\n";
-        // _ = try client.stream.write(message);
+    // var client = try server.accept();
+    //
+    // try stdout.print("Connection received {} is sending data\n", .{client.address});
+    //
+    // const message = "+PONG\r\n";
+    // _ = try client.stream.write(message);
 
-        var client = try server.accept();
-        try stdout.print("Connection received {} is sending data\n", .{client.address});
+    var client = try server.accept();
+    try stdout.print("Connection received {} is sending data\n", .{client.address});
 
-        // _ = try client.stream.read(buffer);
+    // _ = try client.stream.read(buffer);
 
-        const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-        defer allocator.free(buffer);
+    const buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
+    defer allocator.free(buffer);
 
-        while (buffer.len > 0) {
-            const message = "+PONG\r\n";
-            _ = try client.stream.writeAll(message);
+    while (buffer.len > 0) {
+        const message = "+PONG\r\n";
+        _ = try client.stream.writeAll(message);
 
-            try stdout.print("{} says {s}\n", .{ client.address, message });
-        }
-
-        client.stream.close();
+        try stdout.print("{} says {s}\n", .{ client.address, message });
     }
+
+    client.stream.close();
 }
