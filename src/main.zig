@@ -27,7 +27,7 @@ pub fn main() !void {
         // _ = try client.stream.write(message);
 
         var client = try server.accept();
-        defer client.stream.close();
+        client.stream.close();
         try stdout.print("Connection received {} is sending data\n", .{client.address});
 
         // _ = try client.stream.read(buffer);
@@ -42,6 +42,6 @@ pub fn main() !void {
             try stdout.print("{} says {s}\n", .{ client.address, message });
         }
 
-        if (buffer.len == 0) break;
+        client.stream.close();
     }
 }
