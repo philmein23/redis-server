@@ -47,7 +47,7 @@ pub fn main() !void {
     var threads = std.ArrayList(std.Thread).init(allocator);
     defer threads.deinit();
 
-    const cpus = std.Thread.getCpuCount();
+    const cpus = try std.Thread.getCpuCount();
 
     for (0..cpus) |_| {
         try threads.append(try std.Thread.spawn(.{}, write, .{server}));
