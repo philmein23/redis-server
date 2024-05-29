@@ -50,6 +50,6 @@ pub fn main() !void {
     const cpus = std.Thread.getCpuCount();
 
     for (0..cpus) |_| {
-        threads.append(try std.Thread.spawn(.{}, write, .{server}));
+        try threads.append(try std.Thread.spawn(.{}, write, .{server}));
     }
 }
