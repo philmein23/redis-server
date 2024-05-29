@@ -44,7 +44,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var threads = std.ArrayList(std.Thread).init(allocator);
+    var threads = std.ArrayList(*std.Thread).init(allocator);
     defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
