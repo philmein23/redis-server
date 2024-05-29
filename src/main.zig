@@ -2,7 +2,7 @@ const std = @import("std");
 // Uncomment this block to pass the first stage
 const net = std.net;
 
-fn write() void {
+fn write() !void {
     const address = try net.Address.resolveIp("127.0.0.1", 6379);
 
     var server = try address.listen(.{
