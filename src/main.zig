@@ -27,15 +27,17 @@ pub fn main() !void {
 
     // _ = try client.stream.read(buffer);
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    var buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-    defer allocator.free(buffer);
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer _ = gpa.deinit();
+    // const allocator = gpa.allocator();
+    // var buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
+    // defer allocator.free(buffer);
     const reader = client.stream.reader();
-    // var buffer: [1024]u8 = undefined;
+    var buffer: [1024]u8 = undefined;
 
     const bytes_have_been_read = try reader.read(&buffer);
+
+    std.debug.print("Before buffer: {}", .{buffer});
 
     while (bytes_have_been_read > 0) {
         const message = "+PONG\r\n";
@@ -43,6 +45,8 @@ pub fn main() !void {
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
+
+    std.debug.print("After buffer: {}", .{buffer});
 
     client.stream.close();
 }
