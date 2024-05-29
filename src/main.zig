@@ -52,5 +52,5 @@ pub fn main() !void {
         try threads.append(try std.Thread.spawn(.{}, write, .{&server}));
     }
 
-    for (threads.toOwnedSlice()) |thread| thread.join();
+    for (threads.items) |thread| thread.join();
 }
