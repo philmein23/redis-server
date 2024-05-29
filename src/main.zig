@@ -52,4 +52,6 @@ pub fn main() !void {
     for (0..cpus) |_| {
         try threads.append(try std.Thread.spawn(.{}, write, .{server}));
     }
+
+    for (threads) |thread| thread.join();
 }
