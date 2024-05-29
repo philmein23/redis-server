@@ -2,6 +2,30 @@ const std = @import("std");
 // Uncomment this block to pass the first stage
 const net = std.net;
 
+fn write(server: net.Server) void {
+    var client_connection = try server.accept();
+    var buffer: [1024]u8 = undefined;
+
+    const reader = client_connection.stream.reader();
+    const bytes_have_been_read = try reader.read(&buffer);
+
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
+
+    while (bytes_have_been_read > 0) {
+        for (buffer) |byte| {
+            std.debug.print("Before buffer: {any}\n", .{byte});
+        }
+
+        const message = "+PONG\r\n";
+        _ = try client_connection.stream.writeAll(message);
+
+        try stdout.print("{} says {s}\n", .{ client_connection.address, message });
+    }
+
+    client_connection.stream.close();
+}
+
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -15,42 +39,17 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    // var client = try server.accept();
-    //
-    // try stdout.print("Connection received {} is sending data\n", .{client.address});
-    //
-    // const message = "+PONG\r\n";
-    // _ = try client.stream.write(message);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
 
-    var client = try server.accept();
-    try stdout.print("Connection received {} is sending data\n", .{client.address});
+    const allocator = gpa.allocator();
 
-    // _ = try client.stream.read(buffer);
+    var threads = std.ArrayList(std.Thread).init(allocator);
+    defer threads.deinit();
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // const allocator = gpa.allocator();
-    // var buffer = try client.stream.reader().readAllAlloc(allocator, 1024);
-    // defer allocator.free(buffer);
-    const reader = client.stream.reader();
-    var buffer: [1024]u8 = undefined;
+    const cpus = std.Thread.getCpuCount();
 
-    const bytes_have_been_read = try reader.read(&buffer);
-
-    while (bytes_have_been_read > 0) {
-        for (buffer) |byte| {
-            std.debug.print("Before buffer: {any}\n", .{byte});
-        }
-
-        const message = "+PONG\r\n";
-        _ = try client.stream.writeAll(message);
-
-        try stdout.print("{} says {s}\n", .{ client.address, message });
+    for (0..cpus) |_| {
+        threads.append(try std.Thread.spawn(.{}, write, .{server}));
     }
-
-    for (buffer) |byte| {
-        std.debug.print("After buffer: {any}\n", .{byte});
-    }
-
-    client.stream.close();
 }
