@@ -38,7 +38,9 @@ pub fn main() !void {
     const bytes_have_been_read = try reader.read(&buffer);
 
     while (bytes_have_been_read > 0) {
-        std.debug.print("Before buffer: {any}", .{buffer});
+        for (buffer) |byte| {
+            std.debug.print("Before buffer: {any}", .{byte});
+        }
 
         const message = "+PONG\r\n";
         _ = try client.stream.writeAll(message);
@@ -46,7 +48,9 @@ pub fn main() !void {
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
 
-    std.debug.print("After buffer: {any}", .{buffer});
+    for (buffer) |byte| {
+        std.debug.print("After buffer: {any}", .{byte});
+    }
 
     client.stream.close();
 }
