@@ -37,16 +37,16 @@ pub fn main() !void {
 
     const bytes_have_been_read = try reader.read(&buffer);
 
-    std.debug.print("Before buffer: {}", .{buffer});
-
     while (bytes_have_been_read > 0) {
+        std.debug.print("Before buffer: {any}", .{buffer});
+
         const message = "+PONG\r\n";
         _ = try client.stream.writeAll(message);
 
         try stdout.print("{} says {s}\n", .{ client.address, message });
     }
 
-    std.debug.print("After buffer: {}", .{buffer});
+    std.debug.print("After buffer: {any}", .{buffer});
 
     client.stream.close();
 }
