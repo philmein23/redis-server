@@ -39,7 +39,7 @@ pub fn main() !void {
 
     while (bytes_have_been_read > 0) {
         for (buffer) |byte| {
-            std.debug.print("Before buffer: {any}", .{byte});
+            std.debug.print("Before buffer: {any}\n", .{byte});
         }
 
         const message = "+PONG\r\n";
@@ -49,7 +49,7 @@ pub fn main() !void {
     }
 
     for (buffer) |byte| {
-        std.debug.print("After buffer: {any}", .{byte});
+        std.debug.print("After buffer: {any}\n", .{byte});
     }
 
     client.stream.close();
