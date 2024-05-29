@@ -20,14 +20,8 @@ fn write() !void {
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
     while (bytes_have_been_read > 0) {
-        for (buffer) |byte| {
-            std.debug.print("Before buffer: {any}\n", .{byte});
-        }
-
         const message = "+PONG\r\n";
         _ = try client_connection.stream.writeAll(message);
-
-        try stdout.print("{} says {s}\n", .{ client_connection.address, message });
     }
 
     client_connection.stream.close();
