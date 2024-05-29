@@ -2,7 +2,7 @@ const std = @import("std");
 // Uncomment this block to pass the first stage
 const net = std.net;
 
-fn write(server: net.Server) void {
+fn write(server: *const net.Server) void {
     var client_connection = try server.accept();
     var buffer: [1024]u8 = undefined;
 
@@ -44,13 +44,13 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    var threads = std.ArrayList(*std.Thread).init(allocator);
+    var threads = std.ArrayList(std.Thread).init(allocator);
     defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
 
     for (0..cpus) |_| {
-        try threads.append(try std.Thread.spawn(.{}, write, .{server}));
+        try threads.append(try std.Thread.spawn(.{}, write, .{&server}));
     }
 
     for (threads) |thread| thread.join();
