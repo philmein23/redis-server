@@ -29,13 +29,13 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
-
-    var threads = std.ArrayList(std.Thread).init(allocator);
-    defer threads.deinit();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer _ = gpa.deinit();
+    //
+    // const allocator = gpa.allocator();
+    //
+    // var threads = std.ArrayList(std.Thread).init(allocator);
+    // defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
     try stdout.print("CPU core count {}\n", .{cpus});
@@ -45,8 +45,10 @@ pub fn main() !void {
         // for (0..cpus) |_| {
         //     try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
         // }
-        try std.Thread.spawn(.{}, write, .{client_connection});
+        const thread = try std.Thread.spawn(.{}, write, .{client_connection});
 
-        for (threads.items) |thread| thread.join();
+        thread.join();
+
+        // for (threads.items) |thread| thread.join();
     }
 }
