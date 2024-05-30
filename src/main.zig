@@ -48,6 +48,6 @@ pub fn main() !void {
         //
         // thread.detach();
 
-        for (threads.items) |thread| thread.join();
+        for (threads.items) |thread| thread.detach();
     }
 }
