@@ -1,5 +1,4 @@
 const std = @import("std");
-// Uncomment this block to pass the first stage
 const net = std.net;
 
 fn write(client_connection: net.Server.Connection) !void {
@@ -43,9 +42,10 @@ pub fn main() !void {
 
     while (true) {
         const client_connection = try server.accept();
-        for (0..cpus) |_| {
-            try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
-        }
+        // for (0..cpus) |_| {
+        //     try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
+        // }
+        try std.Thread.spawn(.{}, write, .{client_connection});
 
         for (threads.items) |thread| thread.join();
     }
