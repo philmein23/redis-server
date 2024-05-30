@@ -7,12 +7,11 @@ fn write(client_connection: net.Server.Connection) !void {
     var buffer: [1024]u8 = undefined;
 
     const reader = client_connection.stream.reader();
-    const bytes_have_been_read = try reader.read(&buffer);
 
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-    while (bytes_have_been_read > 0) {
+    while (try reader.read(&buffer) > 0) {
         const message = "+PONG\r\n";
         _ = try client_connection.stream.writeAll(message);
     }
@@ -29,26 +28,26 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    //
-    // const allocator = gpa.allocator();
-    //
-    // var threads = std.ArrayList(std.Thread).init(allocator);
-    // defer threads.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+
+    var threads = std.ArrayList(std.Thread).init(allocator);
+    defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
     try stdout.print("CPU core count {}\n", .{cpus});
 
     while (true) {
         const client_connection = try server.accept();
-        // for (0..cpus) |_| {
-        //     try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
-        // }
-        const thread = try std.Thread.spawn(.{}, write, .{client_connection});
+        for (0..cpus) |_| {
+            try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
+        }
+        // const thread = try std.Thread.spawn(.{}, write, .{client_connection});
+        //
+        // thread.detach();
 
-        thread.detach();
-
-        // for (threads.items) |thread| thread.join();
+        for (threads.items) |thread| thread.join();
     }
 }
