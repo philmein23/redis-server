@@ -2,6 +2,7 @@ const std = @import("std");
 const net = std.net;
 
 fn write(client_connection: net.Server.Connection) !void {
+    defer client_connection.stream.close();
     var buffer: [1024]u8 = undefined;
 
     const reader = client_connection.stream.reader();
@@ -14,8 +15,6 @@ fn write(client_connection: net.Server.Connection) !void {
         const message = "+PONG\r\n";
         _ = try client_connection.stream.writeAll(message);
     }
-
-    client_connection.stream.close();
 }
 
 pub fn main() !void {
