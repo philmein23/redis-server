@@ -3,6 +3,7 @@ const net = std.net;
 
 fn write(client_connection: net.Server.Connection) !void {
     defer client_connection.stream.close();
+
     var buffer: [1024]u8 = undefined;
 
     const reader = client_connection.stream.reader();
@@ -44,9 +45,9 @@ pub fn main() !void {
         // for (0..cpus) |_| {
         //     try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
         // }
-        _ = try std.Thread.spawn(.{}, write, .{client_connection});
+        const thread = try std.Thread.spawn(.{}, write, .{client_connection});
 
-        // thread.join();
+        thread.detach();
 
         // for (threads.items) |thread| thread.join();
     }
