@@ -39,6 +39,7 @@ pub fn main() !void {
     defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
+    try stdout.print("CPU core count {}\n", .{cpus});
 
     while (true) {
         const client_connection = try server.accept();
