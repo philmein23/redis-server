@@ -44,10 +44,7 @@ pub fn main() !void {
         for (0..cpus) |_| {
             try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
         }
-        // const thread = try std.Thread.spawn(.{}, write, .{client_connection});
-        //
-        // thread.detach();
 
-        for (threads.items) |thread| thread.detach();
+        for (threads.items) |thread| thread.join();
     }
 }
