@@ -45,6 +45,6 @@ pub fn main() !void {
             try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
         }
 
-        for (threads.items) |thread| thread.join();
+        for (threads.items) |thread| thread.detach();
     }
 }
