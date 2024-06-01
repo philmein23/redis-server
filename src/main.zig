@@ -41,6 +41,7 @@ pub fn main() !void {
     while (true) {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
+
             try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
         }
 
