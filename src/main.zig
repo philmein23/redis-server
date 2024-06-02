@@ -35,8 +35,28 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
                 continue;
             }
 
-            std.debug.print("After everything...: {?}\n", .{buffer[byte_offset]});
-            // switch (buffer[byte_offset]) {}
+            if (!std.ascii.isAlphabetic(buffer[byte_offset])) {
+                std.debug.print("Non-alphabetic...: {?}\n", .{buffer[byte_offset]});
+                byte_offset += 1;
+
+                continue;
+            }
+
+            break;
+        }
+
+        while (true) {
+            var end_index = byte_offset;
+
+            if (std.ascii.isAlphabetic(buffer[end_index])) {
+                std.debug.print("Char to be echoed: {?}\n", .{buffer[byte_offset]});
+                end_index += 1;
+
+                continue;
+            }
+
+            const string = buffer[byte_offset..end_index];
+            std.debug.print("String to be echoed: {s}\n", .{string});
             break;
         }
     }
