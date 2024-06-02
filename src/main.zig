@@ -21,7 +21,9 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
     const found_index = std.ascii.indexOfIgnoreCase(&buffer, "echo");
     try stdout.print("Found index: {?}\n", .{found_index});
-    try stdout.print("Byte encoding: {?}\n", .{buffer[found_index]});
+    if (found_index) |fi| {
+        try stdout.print("Byte encoding: {?}\n", .{buffer[fi]});
+    }
     _ = try client_connection.stream.writeAll(message);
 
     // bytes_read = try reader.read(&buffer);
