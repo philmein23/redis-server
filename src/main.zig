@@ -20,7 +20,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
 
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
 
-    var byte_offset = 0;
+    comptime var byte_offset = 0;
     if (std.ascii.indexOfIgnoreCase(&buffer, "echo")) |fi| {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
