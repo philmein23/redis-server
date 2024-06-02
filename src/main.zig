@@ -16,7 +16,7 @@ fn write(client_connection: net.Server.Connection) !void {
         const message = "+PONG\r\n";
         // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
 
-        try stdout.print("Bytes read here : {}\n", .{bytes_read});
+        try stdout.print("Bytes read here: {}, buffer len: {}\n", .{ bytes_read, buffer.len });
         _ = try client_connection.stream.writeAll(message);
 
         bytes_read = try reader.read(&buffer);
