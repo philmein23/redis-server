@@ -11,7 +11,7 @@ fn write(client_connection: net.Server.Connection) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-    while (try reader.read(&buffer) > 0) |bytes_read| {
+    while (try reader.read(&buffer)) |bytes_read| {
         const message = "+PONG\r\n";
         // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
 
