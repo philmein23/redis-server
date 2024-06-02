@@ -36,6 +36,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
 
             std.debug.print("After everything...: {?}\n", .{buffer[byte_offset]});
             // switch (buffer[byte_offset]) {}
+            break;
         }
     }
     _ = try client_connection.stream.writeAll(message);
