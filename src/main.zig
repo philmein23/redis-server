@@ -13,7 +13,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
     const bytes_read = try reader.read(&buffer);
 
-    if (bytes_read.len == 0) return;
+    if (bytes_read == 0) return;
 
     // while (bytes_read > 0) {
     const message = "+PONG\r\n";
