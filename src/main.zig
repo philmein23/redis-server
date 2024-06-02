@@ -19,11 +19,16 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     const message = "+PONG\r\n";
 
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
-    const found_index = std.ascii.indexOfIgnoreCase(&buffer, "echo");
-    try stdout.print("Found index: {?}\n", .{found_index});
-    if (found_index) |fi| {
-        try stdout.print("Byte encoding: {?}\n", .{buffer[fi]});
+
+    var byte_offset = 0;
+    if (std.ascii.indexOfIgnoreCase(&buffer, "echo")) |fi| {
+        std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
+
+        byte_offset = fi;
+        byte_offset += 2;
+
+        std.debug.print("Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
     }
     _ = try client_connection.stream.writeAll(message);
 
