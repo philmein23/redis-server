@@ -27,17 +27,14 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
         while (true) {
-            byte_offset += echo.len - 1; // finish consuming bytes pertaining to command
-            std.debug.print("Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
-
-            byte_offset += 1;
-
-            if (!std.ascii.isAlphanumeric(buffer[byte_offset])) {
-                std.debug.print("Non-alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
+            if (std.ascii.isAlphanumeric(buffer[byte_offset])) {
+                std.debug.print("Command alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
                 byte_offset += 1;
+
+                continue;
             }
 
-            std.debug.print("alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
+            std.debug.print("After everything...: {?}\n", .{buffer[byte_offset]});
             // switch (buffer[byte_offset]) {}
         }
     }
