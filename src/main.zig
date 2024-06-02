@@ -20,15 +20,26 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
 
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
 
+    const echo = "echo";
     var byte_offset: usize = 0;
-    if (std.ascii.indexOfIgnoreCase(&buffer, "echo")) |fi| {
+    if (std.ascii.indexOfIgnoreCase(&buffer, echo)) |fi| {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
-        byte_offset = fi;
-        byte_offset += 2;
+        while (true) {
+            byte_offset += echo.len - 1; // finish consuming bytes pertaining to command
+            std.debug.print("Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
 
-        std.debug.print("Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
+            byte_offset += 1;
+
+            if (!std.ascii.isAlphanumeric(buffer[byte_offset])) {
+                std.debug.print("Non-alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
+                byte_offset += 1;
+            }
+
+            std.debug.print("alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
+            // switch (buffer[byte_offset]) {}
+        }
     }
     _ = try client_connection.stream.writeAll(message);
 
