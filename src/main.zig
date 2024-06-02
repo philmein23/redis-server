@@ -23,7 +23,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     try stdout.print("Found index: {?}\n", .{found_index});
     if (found_index) |fi| {
         try stdout.print("Byte encoding: {?}\n", .{buffer[fi]});
-        try std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
+        std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
     }
     _ = try client_connection.stream.writeAll(message);
 
