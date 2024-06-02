@@ -11,18 +11,18 @@ fn write(client_connection: net.Server.Connection) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-    var bytes_read = try reader.read(&buffer);
-    while (bytes_read > 0) {
-        const message = "+PONG\r\n";
-        // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
+    const bytes_read = try reader.read(&buffer);
+    // while (bytes_read > 0) {
+    const message = "+PONG\r\n";
+    // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
 
-        for (0..buffer.len) |i| {
-            try stdout.print("Bytes read here: {}, buffer content: {}\n", .{ bytes_read, buffer[i] });
-        }
-        _ = try client_connection.stream.writeAll(message);
-
-        bytes_read = try reader.read(&buffer);
+    for (0..buffer.len) |i| {
+        try stdout.print("Bytes read here: {}, buffer content: {}\n", .{ bytes_read, buffer[i] });
     }
+    _ = try client_connection.stream.writeAll(message);
+
+    // bytes_read = try reader.read(&buffer);
+    // }
 }
 
 pub fn main() !void {
