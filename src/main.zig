@@ -11,12 +11,15 @@ fn write(client_connection: net.Server.Connection) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-    while (try reader.read(&buffer)) |bytes_read| {
+    var bytes_read = try reader.read(&buffer);
+    while (bytes_read > 0) {
         const message = "+PONG\r\n";
         // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
 
         try stdout.print("Bytes read here : {}\n", .{bytes_read});
         _ = try client_connection.stream.writeAll(message);
+
+        bytes_read = try reader.read(&buffer);
     }
 }
 
