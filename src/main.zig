@@ -1,24 +1,27 @@
 const std = @import("std");
 const net = std.net;
 
-fn write(client_connection: net.Server.Connection) !void {
+fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     defer client_connection.stream.close();
 
     var buffer: [1024]u8 = undefined;
 
     const reader = client_connection.stream.reader();
 
-    const stdout = std.io.getStdOut().writer();
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
+    // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
     const bytes_read = try reader.read(&buffer);
+
+    if (bytes_read.len == 0) return;
+
     // while (bytes_read > 0) {
     const message = "+PONG\r\n";
-    // std.mem.lastIndexOfScalar(comptime T: type, slice: []const T, value: T);
 
-    for (0..buffer.len) |i| {
-        try stdout.print("Bytes read here: {}, buffer content: {}\n", .{ bytes_read, buffer[i] });
-    }
+    std.mem.lastIndexOfScalar([]const u8, buffer, "echo");
+    const found_index = std.ascii.indexOfIgnoreCase(buffer, "echo");
+    try stdout.print("Found index: {}\n", .{found_index});
+
     _ = try client_connection.stream.writeAll(message);
 
     // bytes_read = try reader.read(&buffer);
@@ -51,7 +54,7 @@ pub fn main() !void {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
 
-            try threads.append(try std.Thread.spawn(.{}, write, .{client_connection}));
+            try threads.append(try std.Thread.spawn(.{}, write, .{ client_connection, stdout }));
         }
 
         for (threads.items) |thread| thread.detach();
