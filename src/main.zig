@@ -26,8 +26,9 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
+        byte_offset = fi;
         while (true) {
-            if (std.ascii.isAlphanumeric(buffer[byte_offset])) {
+            if (std.ascii.isAlphabetic(buffer[byte_offset])) {
                 std.debug.print("Command alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
                 byte_offset += 1;
 
