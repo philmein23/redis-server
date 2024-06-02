@@ -18,7 +18,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     // while (bytes_read > 0) {
     const message = "+PONG\r\n";
 
-    std.mem.lastIndexOfScalar([]const u8, &buffer, "echo");
+    std.mem.lastIndexOfScalar([1024]u8, buffer, "echo");
     const found_index = std.ascii.indexOfIgnoreCase(&buffer, "echo");
     try stdout.print("Found index: {}\n", .{found_index});
 
