@@ -16,7 +16,6 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     if (bytes_read == 0) return;
 
     // while (bytes_read > 0) {
-    const message = "+PONG\r\n";
 
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
 
@@ -26,41 +25,41 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
-        byte_offset = fi;
+        byte_offset = fi + echo.len - 1;
+
+        byte_offset += 7; // skip non-alphabetic bytes
+        std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
+
+        var end_index = byte_offset;
+        var string: []u8 = "";
         while (true) {
-            if (std.ascii.isAlphabetic(buffer[byte_offset])) {
-                std.debug.print("Command alphanumeric Byte encoding after offset: {?}\n", .{buffer[byte_offset]});
-                byte_offset += 1;
-
-                continue;
-            }
-
-            if (!std.ascii.isAlphabetic(buffer[byte_offset])) {
-                std.debug.print("Non-alphabetic...: {?}\n", .{buffer[byte_offset]});
-                byte_offset += 1;
-
-                continue;
-            }
-
-            break;
-        }
-
-        while (true) {
-            var end_index = byte_offset;
-
             if (std.ascii.isAlphabetic(buffer[end_index])) {
-                std.debug.print("Char to be echoed: {?}\n", .{buffer[byte_offset]});
+                std.debug.print("Char to be echoed: {?}\n", .{buffer[end_index]});
                 end_index += 1;
 
                 continue;
             }
+            string = buffer[byte_offset..end_index];
 
-            const string = buffer[byte_offset..end_index];
             std.debug.print("String to be echoed: {s}\n", .{string});
             break;
         }
+
+        const terminator = "\r\n";
+        // const bulk_string_type = "$";
+        const length = string.len;
+
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+
+        const allocator = gpa.allocator();
+
+        const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
+        std.debug.print("String to be echoed 2: {s}\n", .{resp});
+        defer allocator.free(resp);
+
+        _ = try client_connection.stream.writeAll(resp);
     }
-    _ = try client_connection.stream.writeAll(message);
 
     // bytes_read = try reader.read(&buffer);
     // }
