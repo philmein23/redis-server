@@ -44,6 +44,8 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         break;
     }
 
+    byte_offset = command_index_end + 1;
+
     // if (std.mem.eql(u8, command, "ping")) {
     //     _ = try client_connection.stream.writeAll("+PONG\r\n");
     //     return;
@@ -52,7 +54,8 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         _ = try client_connection.stream.writeAll("+PONG\r\n");
     }
 
-    if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
+    std.debug.print("Before checking ECHO: {s}\n", .{buffer[byte_offset..]});
+    if (std.ascii.indexOfIgnoreCase(buffer[byte_offset..], command)) |fi| {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
