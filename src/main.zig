@@ -19,13 +19,32 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
 
     // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
 
-    const echo = "echo";
-    var byte_offset: usize = 0;
-    if (std.ascii.indexOfIgnoreCase(&buffer, echo)) |fi| {
+    var command: []u8 = "";
+    var byte_offset: usize = 8; // skip control sequence of bytes that dont need to be parsed
+    var command_index_end = byte_offset;
+    while (true) {
+        if (std.ascii.isAlphabetic(buffer[command_index_end])) {
+            std.debug.print("Command char: {?}\n", .{buffer[command_index_end]});
+            command_index_end += 1;
+
+            continue;
+        }
+        command = buffer[byte_offset..command_index_end];
+        std.debug.print("Sliced command: {s}\n", .{command});
+
+        break;
+    }
+
+    if (std.mem.eql(u8, command, "ping")) {
+        _ = try client_connection.stream.writeAll("+PONG\r\n");
+        return;
+    }
+
+    if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
         std.debug.print("Found index: {?}\n", .{fi});
         std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
-        byte_offset = fi + echo.len - 1;
+        byte_offset = fi + command.len - 1;
 
         byte_offset += 7; // skip non-alphabetic bytes
         std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
@@ -41,12 +60,10 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
             }
             string = buffer[byte_offset..end_index];
 
-            std.debug.print("String to be echoed: {s}\n", .{string});
             break;
         }
 
         const terminator = "\r\n";
-        // const bulk_string_type = "$";
         const length = string.len;
 
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -55,7 +72,6 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         const allocator = gpa.allocator();
 
         const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
-        std.debug.print("String to be echoed 2: {s}\n", .{resp});
         defer allocator.free(resp);
 
         _ = try client_connection.stream.writeAll(resp);
