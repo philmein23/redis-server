@@ -30,7 +30,15 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
             continue;
         }
         command = buffer[byte_offset..command_index_end];
-        std.debug.print("Sliced command: {s}\n", .{command});
+
+        var to_lower_command: [5]u8 = undefined;
+
+        for (0..command.len) |i| {
+            const c = std.ascii.toLower(command[i]);
+            to_lower_command[i] = c;
+        }
+
+        std.debug.print("Sliced command: {s}\n", .{&to_lower_command});
 
         break;
     }
