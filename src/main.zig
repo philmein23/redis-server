@@ -31,21 +31,25 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         }
         command = buffer[byte_offset..command_index_end];
 
-        var to_lower_command: [5:0]u8 = undefined;
+        // var to_lower_command: [5]u8 = undefined;
+        //
+        // for (0..command.len) |i| {
+        //     const c = std.ascii.toLower(command[i]);
+        //     to_lower_command[i] = c;
+        // }
 
-        for (0..command.len) |i| {
-            const c = std.ascii.toLower(command[i]);
-            to_lower_command[i] = c;
-        }
-
-        std.debug.print("Sliced command: {s}\n", .{&to_lower_command});
+        // std.debug.print("Sliced command: {s}\n", .{&to_lower_command});
+        std.debug.print("Sliced command: {s}\n", .{command});
 
         break;
     }
 
-    if (std.mem.eql(u8, command, "ping")) {
+    // if (std.mem.eql(u8, command, "ping")) {
+    //     _ = try client_connection.stream.writeAll("+PONG\r\n");
+    //     return;
+    // }
+    if (std.ascii.indexOfIgnoreCase(command, "ping")) |_| {
         _ = try client_connection.stream.writeAll("+PONG\r\n");
-        return;
     }
 
     if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
