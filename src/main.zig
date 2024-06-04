@@ -31,7 +31,7 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
         }
         command = buffer[byte_offset..command_index_end];
 
-        var to_lower_command: [5]u8 = undefined;
+        var to_lower_command: [5:0]u8 = undefined;
 
         for (0..command.len) |i| {
             const c = std.ascii.toLower(command[i]);
