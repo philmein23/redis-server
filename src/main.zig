@@ -11,89 +11,80 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
     // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
-    const bytes_read = try reader.read(&buffer);
+    while (try reader.read(&buffer) > 0) {
+        var command: []u8 = "";
+        var byte_offset: usize = 8; // skip control sequence of bytes that dont need to be parsed
+        var command_index_end = byte_offset;
+        while (true) {
+            if (std.ascii.isAlphabetic(buffer[command_index_end])) {
+                std.debug.print("Command char: {?}\n", .{buffer[command_index_end]});
+                command_index_end += 1;
 
-    if (bytes_read == 0) return;
-
-    // while (bytes_read > 0) {
-
-    // std.mem.lastIndexOfScalar([1024]u8, &buffer, "echo");
-
-    var command: []u8 = "";
-    var byte_offset: usize = 8; // skip control sequence of bytes that dont need to be parsed
-    var command_index_end = byte_offset;
-    while (true) {
-        if (std.ascii.isAlphabetic(buffer[command_index_end])) {
-            std.debug.print("Command char: {?}\n", .{buffer[command_index_end]});
-            command_index_end += 1;
-
-            continue;
-        }
-        command = buffer[byte_offset..command_index_end];
-
-        // var to_lower_command: [5]u8 = undefined;
-        //
-        // for (0..command.len) |i| {
-        //     const c = std.ascii.toLower(command[i]);
-        //     to_lower_command[i] = c;
-        // }
-
-        // std.debug.print("Sliced command: {s}\n", .{&to_lower_command});
-        std.debug.print("Sliced command: {s}\n", .{command});
-
-        break;
-    }
-
-    // if (std.mem.eql(u8, command, "ping")) {
-    //     _ = try client_connection.stream.writeAll("+PONG\r\n");
-    //     return;
-    // }
-    byte_offset = command_index_end + 1;
-
-    std.debug.print("Current byte offset: {}\n", .{byte_offset});
-    if (std.ascii.indexOfIgnoreCase(command, "ping")) |_| {
-        try client_connection.stream.writeAll("+PONG\r\n");
-    } else {
-        if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
-            std.debug.print("Found index: {?}\n", .{fi});
-            std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
-
-            byte_offset = fi + command.len - 1;
-
-            byte_offset += 7; // skip non-alphabetic bytes
-            std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
-
-            var end_index = byte_offset;
-            var string: []u8 = "";
-            while (true) {
-                if (std.ascii.isAlphabetic(buffer[end_index])) {
-                    std.debug.print("Char to be echoed: {?}\n", .{buffer[end_index]});
-                    end_index += 1;
-
-                    continue;
-                }
-                string = buffer[byte_offset..end_index];
-
-                break;
+                continue;
             }
+            command = buffer[byte_offset..command_index_end];
 
-            const terminator = "\r\n";
-            const length = string.len;
+            // var to_lower_command: [5]u8 = undefined;
+            //
+            // for (0..command.len) |i| {
+            //     const c = std.ascii.toLower(command[i]);
+            //     to_lower_command[i] = c;
+            // }
 
-            var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-            defer _ = gpa.deinit();
+            // std.debug.print("Sliced command: {s}\n", .{&to_lower_command});
+            std.debug.print("Sliced command: {s}\n", .{command});
 
-            const allocator = gpa.allocator();
+            break;
+        }
 
-            const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
-            defer allocator.free(resp);
+        // if (std.mem.eql(u8, command, "ping")) {
+        //     _ = try client_connection.stream.writeAll("+PONG\r\n");
+        //     return;
+        // }
+        byte_offset = command_index_end + 1;
 
-            _ = try client_connection.stream.writeAll(resp);
+        std.debug.print("Current byte offset: {}\n", .{byte_offset});
+        if (std.ascii.indexOfIgnoreCase(command, "ping")) |_| {
+            try client_connection.stream.writeAll("+PONG\r\n");
+        } else {
+            if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
+                std.debug.print("Found index: {?}\n", .{fi});
+                std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
+
+                byte_offset = fi + command.len - 1;
+
+                byte_offset += 7; // skip non-alphabetic bytes
+                std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
+
+                var end_index = byte_offset;
+                var string: []u8 = "";
+                while (true) {
+                    if (std.ascii.isAlphabetic(buffer[end_index])) {
+                        std.debug.print("Char to be echoed: {?}\n", .{buffer[end_index]});
+                        end_index += 1;
+
+                        continue;
+                    }
+                    string = buffer[byte_offset..end_index];
+
+                    break;
+                }
+
+                const terminator = "\r\n";
+                const length = string.len;
+
+                var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+                defer _ = gpa.deinit();
+
+                const allocator = gpa.allocator();
+
+                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
+                defer allocator.free(resp);
+
+                _ = try client_connection.stream.writeAll(resp);
+            }
         }
     }
-
-    // bytes_read = try reader.read(&buffer);
-    // }
 }
 
 pub fn main() !void {
