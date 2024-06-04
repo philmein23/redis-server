@@ -50,46 +50,46 @@ fn write(client_connection: net.Server.Connection, stdout: anytype) !void {
     // }
     byte_offset = command_index_end + 1;
 
-    if (std.ascii.indexOfIgnoreCase(command, "ping")) |_| {
-        _ = try client_connection.stream.writeAll("+PONG\r\n");
-    }
-
     std.debug.print("Current byte offset: {}\n", .{byte_offset});
-    if (std.ascii.indexOfIgnoreCase(buffer[byte_offset..], command)) |fi| {
-        std.debug.print("Found index: {?}\n", .{fi});
-        std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
+    if (std.ascii.indexOfIgnoreCase(command, "ping")) |_| {
+        try client_connection.stream.writeAll("+PONG\r\n");
+    } else {
+        if (std.ascii.indexOfIgnoreCase(&buffer, command)) |fi| {
+            std.debug.print("Found index: {?}\n", .{fi});
+            std.debug.print("Byte encoding: {?}\n", .{buffer[fi]});
 
-        byte_offset = fi + command.len - 1;
+            byte_offset = fi + command.len - 1;
 
-        byte_offset += 7; // skip non-alphabetic bytes
-        std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
+            byte_offset += 7; // skip non-alphabetic bytes
+            std.debug.print("Starting character: {?}\n", .{buffer[byte_offset]});
 
-        var end_index = byte_offset;
-        var string: []u8 = "";
-        while (true) {
-            if (std.ascii.isAlphabetic(buffer[end_index])) {
-                std.debug.print("Char to be echoed: {?}\n", .{buffer[end_index]});
-                end_index += 1;
+            var end_index = byte_offset;
+            var string: []u8 = "";
+            while (true) {
+                if (std.ascii.isAlphabetic(buffer[end_index])) {
+                    std.debug.print("Char to be echoed: {?}\n", .{buffer[end_index]});
+                    end_index += 1;
 
-                continue;
+                    continue;
+                }
+                string = buffer[byte_offset..end_index];
+
+                break;
             }
-            string = buffer[byte_offset..end_index];
 
-            break;
+            const terminator = "\r\n";
+            const length = string.len;
+
+            var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+            defer _ = gpa.deinit();
+
+            const allocator = gpa.allocator();
+
+            const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
+            defer allocator.free(resp);
+
+            _ = try client_connection.stream.writeAll(resp);
         }
-
-        const terminator = "\r\n";
-        const length = string.len;
-
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        defer _ = gpa.deinit();
-
-        const allocator = gpa.allocator();
-
-        const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, string, terminator });
-        defer allocator.free(resp);
-
-        _ = try client_connection.stream.writeAll(resp);
     }
 
     // bytes_read = try reader.read(&buffer);
