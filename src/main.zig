@@ -186,7 +186,7 @@ test "test SET command" {
     std.debug.print("Command ARG content: {s}\n", .{command.arg.content});
     try std.testing.expectEqual(Tag.set, command.tag);
 
-    // parser.deinit();
+    parser.deinit();
 }
 
 test "test GET command" {}
