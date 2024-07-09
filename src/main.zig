@@ -268,7 +268,7 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     std.debug.print("Command PING\n", .{});
     try client_connection.stream.writeAll("+PONG\r\n");
 }
-fn handle_set(client_connection: net.Server.Connection, store: RedisStore, key: Arg, val: Arg) !void {
+fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg) !void {
     try store.set(key.content, val.content);
 
     const resp = "+OK\r\n";
@@ -278,14 +278,14 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     const val = try store.get(key.content);
 
     const terminator = "\r\n";
-    const length = val.content.len;
+    const length = val.len;
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val.content, terminator });
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
@@ -305,6 +305,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
 
     const allocator = gpa.allocator();
     var store = RedisStore.init(allocator);
+    defer store.deinit();
 
     while (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
