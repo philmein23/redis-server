@@ -2,25 +2,44 @@ const std = @import("std");
 const net = std.net;
 
 const Loc = struct { start: usize, end: usize };
-const Tag = enum { echo, ping, set };
-const Command = struct { loc: Loc, tag: Tag, arg: Arg };
+const Tag = enum { echo, ping, set, get };
+const Command = struct { loc: Loc, tag: Tag, args: [2]Arg };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
+const RedisStore = struct {
+    table: std.StringHashMap([]const u8),
+
+    pub fn init(alloc: std.mem.Allocator) RedisStore {
+        return RedisStore{ .table = std.StringHashMap([]const u8).init(alloc) };
+    }
+
+    pub fn deinit(self: *RedisStore) void {
+        self.table.deinit();
+    }
+
+    pub fn get(self: *RedisStore, key: []const u8) ![]const u8 {
+        if (self.table.get(key)) |val| {
+            return val;
+        } else {
+            return error.NoValueExistforGivenKey;
+        }
+    }
+
+    pub fn set(self: *RedisStore, key: []const u8, val: []const u8) !void {
+        try self.table.put(key, val);
+    }
+};
+
 const Parser = struct {
-    set_map: std.StringHashMap([]const u8),
     buffer: []const u8,
     curr_index: usize,
 
-    pub fn init(buffer: []const u8, alloc: std.mem.Allocator) Parser {
-        return Parser{ .set_map = std.StringHashMap([]const u8).init(alloc), .buffer = buffer, .curr_index = 0 };
+    pub fn init(buffer: []const u8) Parser {
+        return Parser{ .buffer = buffer, .curr_index = 0 };
     }
 
-    pub fn deinit(self: *Parser) void {
-        self.set_map.deinit();
-    }
     pub fn parse(self: *Parser) !Command {
-        const arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
-        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .arg = arg };
+        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
             self.next();
@@ -71,6 +90,10 @@ const Parser = struct {
             if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "set")) |_| {
                 command.tag = Tag.set;
             }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "get")) |_| {
+                command.tag = Tag.get;
+            }
         }
 
         try self.expect_return_new_line_bytes();
@@ -91,12 +114,14 @@ const Parser = struct {
 
         if (std.ascii.isAlphanumeric(self.peek())) {
             self.next();
-            command.arg.loc.start = self.curr_index;
+            var arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
+
+            arg.loc.start = self.curr_index;
 
             while (true) {
                 if (std.ascii.isAlphanumeric(self.peek())) {
                     self.next();
-                    command.arg.loc.end = self.curr_index;
+                    arg.loc.end = self.curr_index;
 
                     continue;
                 } else {
@@ -104,9 +129,11 @@ const Parser = struct {
                 }
             }
 
-            std.debug.print("Command ARG content {s}\n", .{self.buffer[command.arg.loc.start .. command.arg.loc.end + 1]});
+            std.debug.print("Command ARG content {s}\n", .{self.buffer[arg.loc.start .. arg.loc.end + 1]});
 
-            command.arg.content = self.buffer[command.arg.loc.start .. command.arg.loc.end + 1];
+            arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
+
+            command.args[0] = arg;
         }
 
         if (command.tag == Tag.ping) {
@@ -127,13 +154,13 @@ const Parser = struct {
 
             if (std.ascii.isAlphanumeric(self.peek())) {
                 self.next();
-                var new_value = Arg{ .loc = undefined, .tag = .set, .content = undefined };
-                new_value.loc.start = self.curr_index;
+                var arg = Arg{ .loc = undefined, .tag = .set, .content = undefined };
+                arg.loc.start = self.curr_index;
 
                 while (true) {
                     if (std.ascii.isAlphanumeric(self.peek())) {
                         self.next();
-                        new_value.loc.end = self.curr_index;
+                        arg.loc.end = self.curr_index;
 
                         continue;
                     } else {
@@ -141,10 +168,9 @@ const Parser = struct {
                     }
                 }
 
-                new_value.content = self.buffer[new_value.loc.start .. new_value.loc.end + 1];
+                arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
 
-                std.debug.print("SET mapping key: {s}, value: {s}\n", .{ command.arg.content, new_value.content });
-                try self.set_map.put(command.arg.content, new_value.content);
+                command.args[1] = arg;
             }
         }
 
@@ -174,36 +200,40 @@ const Parser = struct {
     }
 };
 
-test "test SET command" {
+test "test SET and GET command" {
     const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const alloc = gpa.allocator();
-    var parser = Parser.init(bytes, alloc);
-    const command = try parser.parse();
+    const allocator = gpa.allocator();
+    var store = RedisStore.init(allocator);
+    defer store.deinit();
 
-    std.debug.print("Command ARG content: {s}\n", .{command.arg.content});
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
+    try store.set(command.args[0].content, command.args[1].content);
     try std.testing.expectEqual(Tag.set, command.tag);
 
-    parser.deinit();
-}
+    const bytes_two = "*3\r\n$3\r\nGET\r\n$5\r\napple\r\n";
+    var parser_two = Parser.init(bytes_two);
+    const command_two = try parser_two.parse();
+    const get_value = try store.get(command_two.args[0].content);
 
-test "test GET command" {}
+    try std.testing.expectEqual(Tag.get, command_two.tag);
+    try std.testing.expectEqualSlices(u8, "pear", get_value);
+}
 
 test "test parse PING command" {
     const bytes = "*1\r\n$4\r\nping\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const alloc = gpa.allocator();
-    var parser = Parser.init(bytes, alloc);
+    var parser = Parser.init(bytes);
     const command = try parser.parse();
 
-    std.debug.print("Command ARG content: {s}\n", .{command.arg.content});
+    std.debug.print("Command ARG content: {s}\n", .{command.args[0].content});
     try std.testing.expectEqual(Tag.ping, command.tag);
-
-    parser.deinit();
 }
 
 test "test parse ECHO command" {
@@ -211,18 +241,12 @@ test "test parse ECHO command" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const alloc = gpa.allocator();
-    var parser = Parser.init(bytes, alloc);
+    var parser = Parser.init(bytes);
     const command = try parser.parse();
 
-    std.debug.print("Command ARG content: {s}\n", .{command.arg.content});
     try std.testing.expectEqual(Tag.echo, command.tag);
     const exp = "pineapple";
-    std.debug.print("Command ARG expected ptr: {*}, actual ptr: {*}\n", .{ exp.ptr, command.arg.content.ptr });
-    std.debug.print("Command ARG expected slice: {s}, actual slice: {s}\n", .{ exp, command.arg.content });
-    try std.testing.expectEqualSlices(u8, exp, command.arg.content);
-
-    parser.deinit();
+    try std.testing.expectEqualSlices(u8, exp, command.args[0].content);
 }
 
 fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
@@ -244,6 +268,28 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     std.debug.print("Command PING\n", .{});
     try client_connection.stream.writeAll("+PONG\r\n");
 }
+fn handle_set(client_connection: net.Server.Connection, store: RedisStore, key: Arg, val: Arg) !void {
+    try store.set(key.content, val.content);
+
+    const resp = "+OK\r\n";
+    _ = try client_connection.stream.writeAll(resp);
+}
+fn handle_get(client_connection: net.Server.Connection, store: RedisStore, key: Arg) !void {
+    const val = try store.get(key.content);
+
+    const terminator = "\r\n";
+    const length = val.content.len;
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val.content, terminator });
+    defer allocator.free(resp);
+
+    _ = try client_connection.stream.writeAll(resp);
+}
 
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) !void {
     defer client_connection.stream.close();
@@ -254,14 +300,22 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
 
     try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+    const store = RedisStore.init(allocator);
+
     while (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
         const command = try parser.parse();
 
         switch (command.tag) {
-            Tag.echo => try handle_echo(client_connection, command.arg),
+            Tag.echo => try handle_echo(client_connection, command.args[0]),
             Tag.ping => try handle_ping(client_connection),
+            Tag.set => try handle_set(client_connection, store, command.args[0], command.args[1]),
+            Tag.get => try handle_get(client_connection, store, command.args[0]),
         }
     }
 }
