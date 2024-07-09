@@ -274,7 +274,7 @@ fn handle_set(client_connection: net.Server.Connection, store: RedisStore, key: 
     const resp = "+OK\r\n";
     _ = try client_connection.stream.writeAll(resp);
 }
-fn handle_get(client_connection: net.Server.Connection, store: RedisStore, key: Arg) !void {
+fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
     const val = try store.get(key.content);
 
     const terminator = "\r\n";
@@ -304,7 +304,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-    const store = RedisStore.init(allocator);
+    var store = RedisStore.init(allocator);
 
     while (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
@@ -314,8 +314,8 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
         switch (command.tag) {
             Tag.echo => try handle_echo(client_connection, command.args[0]),
             Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, store, command.args[0], command.args[1]),
-            Tag.get => try handle_get(client_connection, store, command.args[0]),
+            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1]),
+            Tag.get => try handle_get(client_connection, &store, command.args[0]),
         }
     }
 }
