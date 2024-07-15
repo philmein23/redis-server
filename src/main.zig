@@ -1,16 +1,22 @@
 const std = @import("std");
 const net = std.net;
+const time = std.time;
 
 const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get };
-const Command = struct { loc: Loc, tag: Tag, args: [2]Arg };
+const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
 const RedisStore = struct {
-    table: std.StringHashMap([]const u8),
+    table: std.StringHashMap(RedisVal),
+
+    const RedisVal = struct {
+        val: []const u8,
+        expiry: ?i64 = undefined,
+    };
 
     pub fn init(alloc: std.mem.Allocator) RedisStore {
-        return RedisStore{ .table = std.StringHashMap([]const u8).init(alloc) };
+        return RedisStore{ .table = std.StringHashMap(RedisVal).init(alloc) };
     }
 
     pub fn deinit(self: *RedisStore) void {
@@ -18,28 +24,42 @@ const RedisStore = struct {
     }
 
     pub fn get(self: *RedisStore, key: []const u8) ![]const u8 {
-        if (self.table.get(key)) |val| {
-            return val;
+        if (self.table.get(key)) |v| {
+            if (v.expiry) |exp| {
+                const now = time.milliTimestamp();
+                if (now <= exp) {
+                    return v.val;
+                } else {
+                    return error.KeyHasExceededExpirationThreshold;
+                }
+            }
+            return v.val;
         } else {
             return error.NoValueExistforGivenKey;
         }
     }
 
-    pub fn set(self: *RedisStore, key: []const u8, val: []const u8) !void {
-        try self.table.put(key, val);
+    pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?i64) !void {
+        var rv = RedisVal{ .val = val };
+        if (exp) |e| {
+            const now = time.milliTimestamp();
+            rv.expiry = now + e;
+        }
+
+        try self.table.put(key, rv);
     }
 };
 
 const Parser = struct {
-    buffer: []const u8,
+    buffer: [:0]const u8,
     curr_index: usize,
 
-    pub fn init(buffer: []const u8) Parser {
+    pub fn init(buffer: [:0]const u8) Parser {
         return Parser{ .buffer = buffer, .curr_index = 0 };
     }
 
     pub fn parse(self: *Parser) !Command {
-        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
+        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined, .opt = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
             self.next();
@@ -136,7 +156,7 @@ const Parser = struct {
             command.args[0] = arg;
         }
 
-        if (command.tag == Tag.ping) {
+        if (command.tag == Tag.ping or command.tag == Tag.get) {
             return command;
         }
         if (command.tag == Tag.set) {
@@ -176,6 +196,72 @@ const Parser = struct {
 
         try self.expect_return_new_line_bytes();
 
+        // potentially parse optional expiry parameter
+        if (self.peek() == '$') {
+            self.next();
+        } else {
+            return command;
+        }
+
+        if (std.ascii.isDigit(self.peek())) {
+            self.next();
+        }
+        try self.expect_return_new_line_bytes();
+
+        var arg = Arg{ .loc = undefined, .tag = .set, .content = undefined };
+
+        if (std.ascii.isAlphanumeric(self.peek())) {
+            self.next();
+            arg.loc.start = self.curr_index;
+
+            while (true) {
+                if (std.ascii.isAlphanumeric(self.peek())) {
+                    self.next();
+                    arg.loc.end = self.curr_index;
+
+                    continue;
+                } else {
+                    break;
+                }
+            }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[arg.loc.start .. arg.loc.end + 1], "px")) |_| {
+                try self.expect_return_new_line_bytes();
+
+                if (self.peek() == '$') {
+                    self.next();
+                }
+
+                if (std.ascii.isDigit(self.peek())) {
+                    self.next();
+                } else {
+                    return command;
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                if (std.ascii.isAlphanumeric(self.peek())) {
+                    self.next();
+                    arg.loc.start = self.curr_index;
+
+                    while (true) {
+                        if (std.ascii.isAlphanumeric(self.peek())) {
+                            self.next();
+                            arg.loc.end = self.curr_index;
+
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
+                command.opt = arg;
+
+                try self.expect_return_new_line_bytes();
+            }
+        }
+
         return command;
     }
     fn next(self: *Parser) void {
@@ -200,6 +286,23 @@ const Parser = struct {
     }
 };
 
+test "test SET with expiry opt" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+    var store = RedisStore.init(allocator);
+    defer store.deinit();
+
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
+    try store.set(command.args[0].content, command.args[1].content, undefined);
+    try std.testing.expectEqual(Tag.set, command.tag);
+    try std.testing.expectEqualSlices(u8, "100", command.opt.?.content);
+}
+
 test "test SET and GET command" {
     const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -212,7 +315,7 @@ test "test SET and GET command" {
     var parser = Parser.init(bytes);
     const command = try parser.parse();
     std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
-    try store.set(command.args[0].content, command.args[1].content);
+    try store.set(command.args[0].content, command.args[1].content, undefined);
     try std.testing.expectEqual(Tag.set, command.tag);
 
     const bytes_two = "*3\r\n$3\r\nGET\r\n$5\r\napple\r\n";
@@ -294,7 +397,7 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) !void {
     defer client_connection.stream.close();
 
-    var buffer: [1024]u8 = undefined;
+    var buffer: [1024:0]u8 = undefined;
 
     const reader = client_connection.stream.reader();
 
