@@ -371,14 +371,20 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     std.debug.print("Command PING\n", .{});
     try client_connection.stream.writeAll("+PONG\r\n");
 }
-fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg) !void {
-    try store.set(key.content, val.content, undefined);
+fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
+    try store.set(key.content, val.content, opt.?.content);
 
     const resp = "+OK\r\n";
     _ = try client_connection.stream.writeAll(resp);
 }
 fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
     const val = try store.get(key.content);
+
+    if (val == error.KeyHasExceededExpirationThreshold) {
+        try client_connection.stream.writeAll("$-1\r\n");
+
+        return;
+    }
 
     const terminator = "\r\n";
     const length = val.len;
@@ -418,7 +424,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
         switch (command.tag) {
             Tag.echo => try handle_echo(client_connection, command.args[0]),
             Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1]),
+            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], command.opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
         }
     }
