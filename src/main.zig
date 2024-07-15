@@ -372,7 +372,7 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg) !void {
-    try store.set(key.content, val.content);
+    try store.set(key.content, val.content, undefined);
 
     const resp = "+OK\r\n";
     _ = try client_connection.stream.writeAll(resp);
