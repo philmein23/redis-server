@@ -44,8 +44,9 @@ const RedisStore = struct {
         if (exp) |e| {
             const bytes_to_int = std.mem.bytesAsValue(i64, e).*;
             const now = time.milliTimestamp();
+
             rv.expiry = now + bytes_to_int;
-            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, EXP: {s}, NEW_EXP: {any}\n", .{ key, val, e, rv.expiry });
+            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, NOW: {any}, EXP: {s}, NEW_EXP: {any}\n", .{ key, val, now, e, rv.expiry });
         }
 
         try self.table.put(key, rv);
