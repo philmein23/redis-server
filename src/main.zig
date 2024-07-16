@@ -381,12 +381,13 @@ fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key:
     _ = try client_connection.stream.writeAll(resp);
 }
 fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
-    const val = store.get(key.content) catch |err| {
-        if (err == error.KeyHasExceededExpirationThreshold) {
+    const val = store.get(key.content) catch |err| switch (err) {
+        error.KeyHasExceededExpirationThreshold => {
             try client_connection.stream.writeAll("$-1\r\n");
 
             return;
-        }
+        },
+        else => |e| return e,
     };
 
     const terminator = "\r\n";
