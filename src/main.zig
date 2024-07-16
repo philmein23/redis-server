@@ -39,11 +39,12 @@ const RedisStore = struct {
         }
     }
 
-    pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?i64) !void {
+    pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?[]const u8) !void {
         var rv = RedisVal{ .val = val };
         if (exp) |e| {
+            const bytes_to_int = std.mem.bytesAsValue(i64, e).*;
             const now = time.milliTimestamp();
-            rv.expiry = now + e;
+            rv.expiry = now + bytes_to_int;
         }
 
         try self.table.put(key, rv);
@@ -372,6 +373,8 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
+    // if (opt) |arg| {}
+
     try store.set(key.content, val.content, opt.?.content);
 
     const resp = "+OK\r\n";
