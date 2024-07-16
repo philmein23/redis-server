@@ -66,19 +66,16 @@ const Parser = struct {
             self.next();
         }
 
-        if (std.ascii.isDigit(self.peek())) {
+        while (std.ascii.isDigit(self.peek())) {
             self.next();
-        } else {
-            return error.ParsingErrorUnexpectedCharacter;
         }
-
         try self.expect_return_new_line_bytes();
 
         if (self.peek() == '$') {
             self.next();
         }
 
-        if (std.ascii.isDigit(self.peek())) {
+        while (std.ascii.isDigit(self.peek())) {
             self.next();
         }
 
@@ -127,7 +124,7 @@ const Parser = struct {
             self.next();
         }
 
-        if (std.ascii.isDigit(self.peek())) {
+        while (std.ascii.isDigit(self.peek())) {
             self.next();
         }
 
@@ -167,7 +164,7 @@ const Parser = struct {
                 self.next();
             }
 
-            if (std.ascii.isDigit(self.peek())) {
+            while (std.ascii.isDigit(self.peek())) {
                 self.next();
             }
 
@@ -204,7 +201,7 @@ const Parser = struct {
             return command;
         }
 
-        if (std.ascii.isDigit(self.peek())) {
+        while (std.ascii.isDigit(self.peek())) {
             self.next();
         }
         try self.expect_return_new_line_bytes();
@@ -233,12 +230,9 @@ const Parser = struct {
                     self.next();
                 }
 
-                if (std.ascii.isDigit(self.peek())) {
+                while (std.ascii.isDigit(self.peek())) {
                     self.next();
-                } else {
-                    return command;
                 }
-
                 try self.expect_return_new_line_bytes();
 
                 if (std.ascii.isAlphanumeric(self.peek())) {
@@ -288,7 +282,7 @@ const Parser = struct {
 };
 
 test "test SET with expiry opt" {
-    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
+    const bytes = "*3\r\n$3\r\nSET\r\n$500\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
