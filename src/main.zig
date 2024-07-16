@@ -45,6 +45,7 @@ const RedisStore = struct {
             const bytes_to_int = std.mem.bytesAsValue(i64, e).*;
             const now = time.milliTimestamp();
             rv.expiry = now + bytes_to_int;
+            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, EXP: {s}, NEW_EXP: {any}\n", .{ key, val, e, rv.expiry });
         }
 
         try self.table.put(key, rv);
@@ -282,7 +283,7 @@ const Parser = struct {
 };
 
 test "test SET with expiry opt" {
-    const bytes = "*3\r\n$3\r\nSET\r\n$500\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
