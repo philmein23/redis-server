@@ -368,9 +368,14 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
-    // if (opt) |arg| {}
+    const maybe_px = opt orelse null;
 
-    try store.set(key.content, val.content, opt.?.content);
+    std.debug.print("HANDLE_SET - OPT: {any}", .{maybe_px});
+    if (maybe_px != null) {
+        try store.set(key.content, val.content, maybe_px.?.content);
+    } else {
+        try store.set(key.content, val.content, null);
+    }
 
     const resp = "+OK\r\n";
     _ = try client_connection.stream.writeAll(resp);
@@ -420,10 +425,12 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
 
         const command = try parser.parse();
 
+        const opt = command.opt orelse null;
+
         switch (command.tag) {
             Tag.echo => try handle_echo(client_connection, command.args[0]),
             Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], command.opt.?),
+            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
         }
     }
