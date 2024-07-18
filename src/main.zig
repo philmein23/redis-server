@@ -12,7 +12,7 @@ const RedisStore = struct {
 
     const RedisVal = struct {
         val: []const u8,
-        expiry: ?i64 = undefined,
+        expiry: ?i64 = null,
     };
 
     pub fn init(alloc: std.mem.Allocator) RedisStore {
@@ -42,13 +42,12 @@ const RedisStore = struct {
     pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?[]const u8) !void {
         var rv = RedisVal{ .val = val };
         if (exp) |e| {
-            const bytes_to_int = std.mem.bytesAsValue(i64, e).*;
             const now = time.milliTimestamp();
+            const parse_to_int = try std.fmt.parseInt(i64, e, 10);
 
-            rv.expiry = now + bytes_to_int;
-            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, NOW: {any}, EXP: {any}, NEW_EXP: {any}\n", .{ key, val, now, bytes_to_int, rv.expiry });
+            rv.expiry = now + parse_to_int;
+            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, NOW: {any}, EXP: {any}, NEW_EXP: {any}\n", .{ key, val, now, parse_to_int, rv.expiry });
         }
-
         try self.table.put(key, rv);
     }
 };
@@ -294,8 +293,8 @@ test "test SET with expiry opt" {
 
     var parser = Parser.init(bytes);
     const command = try parser.parse();
-    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
-    try store.set(command.args[0].content, command.args[1].content, undefined);
+    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[1].content, command.args[1].content });
+    try store.set(command.args[0].content, command.args[1].content, command.opt.?.content);
     try std.testing.expectEqual(Tag.set, command.tag);
     try std.testing.expectEqualSlices(u8, "100", command.opt.?.content);
 }
@@ -312,7 +311,7 @@ test "test SET and GET command" {
     var parser = Parser.init(bytes);
     const command = try parser.parse();
     std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
-    try store.set(command.args[0].content, command.args[1].content, undefined);
+    try store.set(command.args[0].content, command.args[1].content, null);
     try std.testing.expectEqual(Tag.set, command.tag);
 
     const bytes_two = "*3\r\n$3\r\nGET\r\n$5\r\napple\r\n";
