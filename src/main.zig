@@ -423,7 +423,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
         switch (command.tag) {
             Tag.echo => try handle_echo(client_connection, command.args[0]),
             Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], command.opt),
+            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], command.?.opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
         }
     }
