@@ -61,7 +61,7 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !Command {
-        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined, .opt = undefined };
+        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
             self.next();
