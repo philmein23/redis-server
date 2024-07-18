@@ -4,7 +4,7 @@ const time = std.time;
 
 const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get };
-const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg };
+const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
 const RedisStore = struct {
