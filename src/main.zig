@@ -368,11 +368,8 @@ fn handle_ping(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
-    const maybe_px = opt orelse null;
-
-    std.debug.print("HANDLE_SET - OPT: {any}", .{maybe_px});
-    if (maybe_px != null) {
-        try store.set(key.content, val.content, maybe_px.?.content);
+    if (opt != null) {
+        try store.set(key.content, val.content, opt.?.content);
     } else {
         try store.set(key.content, val.content, null);
     }
@@ -438,8 +435,16 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    try stdout.print("Logs from your program will appear here!\n", .{});
+    var args = std.process.args();
+
+    const found_port = while (args.next()) |arg| {
+        std.debug.print("ARG: {s}\n", .{arg});
+        if (std.ascii.eqlIgnoreCase(arg, "port")) |_| {
+            return args.next() orelse "6379";
+        }
+    };
+    std.debug.print("PORT: {s}\n", .{found_port});
+
     const address = try net.Address.resolveIp("127.0.0.1", 6379);
 
     var server = try address.listen(.{
