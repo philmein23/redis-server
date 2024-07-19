@@ -437,7 +437,7 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     var args = std.process.args();
 
-    var found_port = "6379";
+    var found_port = undefined;
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
