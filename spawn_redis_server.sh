@@ -1,4 +1,3 @@
-
 #!/bin/sh
 #
 # DON'T EDIT THIS!
@@ -8,4 +7,4 @@
 # DON'T EDIT THIS!
 set -e
 
-exec zig buikkld run -- "$@"
+exec zig build run -- "$@"
