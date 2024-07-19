@@ -439,7 +439,7 @@ pub fn main() !void {
 
     const found_port = while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
-        if (std.ascii.eqlIgnoreCase(arg, "port")) |_| {
+        if (std.ascii.eqlIgnoreCase(arg, "port")) {
             return args.next() orelse "6379";
         }
     };
