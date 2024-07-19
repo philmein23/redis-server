@@ -444,7 +444,7 @@ pub fn main() !void {
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
             if (args.next()) |p| {
                 port = try std.fmt.parseInt(u16, p, 10);
-                std.debug.print("PORT: {s}\n", .{port});
+                std.debug.print("PORT: {}\n", .{port});
             }
             break;
         }
