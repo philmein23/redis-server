@@ -441,7 +441,7 @@ pub fn main() !void {
     var port: u16 = 6379;
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
-        if (std.ascii.eqlIgnoreCase(arg, "port")) {
+        if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
                 port = try std.fmt.parseInt(u16, p, 10);
                 std.debug.print("PORT: {}\n", .{port});
