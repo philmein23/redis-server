@@ -443,7 +443,7 @@ pub fn main() !void {
         std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
             if (args.next()) |p| {
-                port = std.fmt.parseInt(u16, p, 10);
+                port = try std.fmt.parseInt(u16, p, 10);
                 std.debug.print("PORT: {s}\n", .{port});
             }
             break;
