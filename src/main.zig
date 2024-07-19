@@ -438,17 +438,19 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
 
+    var port = 6379;
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
-            const found_port = args.next() orelse "6379";
-
-            std.debug.print("PORT: {s}\n", .{found_port});
+            if (args.next()) |p| {
+                port = p;
+                std.debug.print("PORT: {s}\n", .{port});
+            }
             break;
         }
     }
 
-    const address = try net.Address.resolveIp("127.0.0.1", 6379);
+    const address = try net.Address.resolveIp("127.0.0.1", port);
 
     var server = try address.listen(.{
         .reuse_address = true,
