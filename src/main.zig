@@ -436,6 +436,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     var args = std.process.args();
+    args.skip();
 
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
