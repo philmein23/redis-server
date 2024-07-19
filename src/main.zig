@@ -438,7 +438,7 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
 
-    var port = 6379;
+    var port: u16 = 6379;
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
