@@ -117,10 +117,41 @@ const Parser = struct {
 
         try self.expect_return_new_line_bytes();
 
-        if (command.tag == Tag.ping) {
-            return command;
-        }
+        switch (command.tag) {
+            Tag.ping => return command,
+            Tag.echo, Tag.get => {
+                command.args[0] = try self.parse_string();
+                return command;
+            },
+            Tag.set => {
+                command.args[0] = try self.parse_string();
 
+                try self.expect_return_new_line_bytes();
+
+                command.args[1] = try self.parse_string();
+
+                try self.expect_return_new_line_bytes();
+
+                // try to parse optional expiry parameter
+                if (self.peek() != '$') return command;
+
+                self.next();
+
+                const px = try self.parse_string();
+
+                if (std.ascii.indexOfIgnoreCase(self.buffer[px.loc.start .. px.loc.end + 1], "px")) |_| {
+                    try self.expect_return_new_line_bytes();
+
+                    command.opt = try self.parse_string();
+                }
+                try self.expect_return_new_line_bytes();
+
+                return command;
+            },
+        }
+    }
+
+    fn parse_string(self: *Parser) !Arg {
         if (self.peek() == '$') {
             self.next();
         }
@@ -152,113 +183,10 @@ const Parser = struct {
 
             arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
 
-            command.args[0] = arg;
-        }
-
-        if (command.tag == Tag.ping or command.tag == Tag.get) {
-            return command;
-        }
-        if (command.tag == Tag.set) {
-            try self.expect_return_new_line_bytes();
-
-            if (self.peek() == '$') {
-                self.next();
-            }
-
-            while (std.ascii.isDigit(self.peek())) {
-                self.next();
-            }
-
-            try self.expect_return_new_line_bytes();
-
-            if (std.ascii.isAlphanumeric(self.peek())) {
-                self.next();
-                var arg = Arg{ .loc = undefined, .tag = .set, .content = undefined };
-                arg.loc.start = self.curr_index;
-
-                while (true) {
-                    if (std.ascii.isAlphanumeric(self.peek())) {
-                        self.next();
-                        arg.loc.end = self.curr_index;
-
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-
-                arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
-
-                command.args[1] = arg;
-            }
-        }
-
-        try self.expect_return_new_line_bytes();
-
-        // potentially parse optional expiry parameter
-        if (self.peek() == '$') {
-            self.next();
+            return arg;
         } else {
-            return command;
+            return error.CannotParseString;
         }
-
-        while (std.ascii.isDigit(self.peek())) {
-            self.next();
-        }
-        try self.expect_return_new_line_bytes();
-
-        var arg = Arg{ .loc = undefined, .tag = .set, .content = undefined };
-
-        if (std.ascii.isAlphanumeric(self.peek())) {
-            self.next();
-            arg.loc.start = self.curr_index;
-
-            while (true) {
-                if (std.ascii.isAlphanumeric(self.peek())) {
-                    self.next();
-                    arg.loc.end = self.curr_index;
-
-                    continue;
-                } else {
-                    break;
-                }
-            }
-
-            if (std.ascii.indexOfIgnoreCase(self.buffer[arg.loc.start .. arg.loc.end + 1], "px")) |_| {
-                try self.expect_return_new_line_bytes();
-
-                if (self.peek() == '$') {
-                    self.next();
-                }
-
-                while (std.ascii.isDigit(self.peek())) {
-                    self.next();
-                }
-                try self.expect_return_new_line_bytes();
-
-                if (std.ascii.isAlphanumeric(self.peek())) {
-                    self.next();
-                    arg.loc.start = self.curr_index;
-
-                    while (true) {
-                        if (std.ascii.isAlphanumeric(self.peek())) {
-                            self.next();
-                            arg.loc.end = self.curr_index;
-
-                            continue;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
-                command.opt = arg;
-
-                try self.expect_return_new_line_bytes();
-            }
-        }
-
-        return command;
     }
     fn next(self: *Parser) void {
         self.curr_index += 1;
@@ -440,11 +368,9 @@ pub fn main() !void {
 
     var port: u16 = 6379;
     while (args.next()) |arg| {
-        std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
                 port = try std.fmt.parseInt(u16, p, 10);
-                std.debug.print("PORT: {}\n", .{port});
             }
             break;
         }
