@@ -437,15 +437,15 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     var args = std.process.args();
 
-    var found_port = undefined;
     while (args.next()) |arg| {
         std.debug.print("ARG: {s}\n", .{arg});
         if (std.ascii.eqlIgnoreCase(arg, "port")) {
-            found_port = args.next() orelse "6379";
+            const found_port = args.next() orelse "6379";
+
+            std.debug.print("PORT: {s}\n", .{found_port});
             break;
         }
     }
-    std.debug.print("PORT: {s}\n", .{found_port});
 
     const address = try net.Address.resolveIp("127.0.0.1", 6379);
 
