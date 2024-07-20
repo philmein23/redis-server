@@ -313,9 +313,9 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_info(client_connection: net.Server.Connection) !void {
+fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void {
     const terminator = "\r\n";
-    const val = "role:master";
+    const val = if (is_replica) "role:slave" else "role:master";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -329,7 +329,6 @@ fn handle_info(client_connection: net.Server.Connection) !void {
 }
 
 fn handle_ping(client_connection: net.Server.Connection) !void {
-    std.debug.print("Command PING\n", .{});
     try client_connection.stream.writeAll("+PONG\r\n");
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
@@ -366,7 +365,7 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) !void {
+fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
     defer client_connection.stream.close();
 
     var buffer: [1024:0]u8 = undefined;
@@ -394,7 +393,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
             Tag.ping => try handle_ping(client_connection),
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
-            Tag.info => try handle_info(client_connection),
+            Tag.info => try handle_info(client_connection, is_replica),
         }
     }
 }
@@ -405,12 +404,17 @@ pub fn main() !void {
     _ = args.skip();
 
     var port: u16 = 6379;
+    var is_replica = false;
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
                 port = try std.fmt.parseInt(u16, p, 10);
             }
             break;
+        }
+
+        if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
+            is_replica = true;
         }
     }
 
@@ -436,7 +440,7 @@ pub fn main() !void {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
 
-            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout }));
+            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
         }
 
         for (threads.items) |thread| thread.detach();
