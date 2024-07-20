@@ -410,7 +410,6 @@ pub fn main() !void {
             if (args.next()) |p| {
                 port = try std.fmt.parseInt(u16, p, 10);
             }
-            break;
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
