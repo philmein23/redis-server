@@ -3,7 +3,7 @@ const net = std.net;
 const time = std.time;
 
 const Loc = struct { start: usize, end: usize };
-const Tag = enum { echo, ping, set, get };
+const Tag = enum { echo, ping, set, get, info };
 const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
@@ -113,6 +113,10 @@ const Parser = struct {
             if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "get")) |_| {
                 command.tag = Tag.get;
             }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "info")) |_| {
+                command.tag = Tag.info;
+            }
         }
 
         try self.expect_return_new_line_bytes();
@@ -121,6 +125,8 @@ const Parser = struct {
             Tag.ping => return command,
             Tag.echo, Tag.get => {
                 command.args[0] = try self.parse_string();
+                std.debug.print("Command.args[0] address: {*}, {*}\n", .{ &command.args[0], &command.args });
+                std.debug.print("Arg address (after returned): {*}, {*}\n", .{ &command.args[0], &command.args[0].loc });
                 return command;
             },
             Tag.set => {
@@ -145,6 +151,11 @@ const Parser = struct {
                     command.opt = try self.parse_string();
                 }
                 try self.expect_return_new_line_bytes();
+
+                return command;
+            },
+            Tag.info => {
+                command.args[0] = try self.parse_string();
 
                 return command;
             },
@@ -183,9 +194,11 @@ const Parser = struct {
 
             arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
 
+            std.debug.print("Arg address (Before returned): {*}, {*}\n", .{ &arg, &arg.loc });
+
             return arg;
         } else {
-            return error.CannotParseString;
+            return error.BytesAreNotAlphanumeric;
         }
     }
     fn next(self: *Parser) void {
@@ -225,6 +238,15 @@ test "test SET with expiry opt" {
     try store.set(command.args[0].content, command.args[1].content, command.opt.?.content);
     try std.testing.expectEqual(Tag.set, command.tag);
     try std.testing.expectEqualSlices(u8, "100", command.opt.?.content);
+}
+
+test "test INFO command" {
+    const bytes = "*3\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n";
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+
+    try std.testing.expectEqual(Tag.info, command.tag);
+    try std.testing.expectEqualSlices(u8, "replication", command.args[0].content);
 }
 
 test "test SET and GET command" {
@@ -286,6 +308,21 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     const allocator = gpa.allocator();
 
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, arg.content, terminator });
+    defer allocator.free(resp);
+
+    _ = try client_connection.stream.writeAll(resp);
+}
+
+fn handle_info(client_connection: net.Server.Connection) !void {
+    const terminator = "\r\n";
+    const val = "role:master";
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ val.len, terminator, val, terminator });
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
@@ -357,6 +394,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype) 
             Tag.ping => try handle_ping(client_connection),
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
+            Tag.info => try handle_info(client_connection),
         }
     }
 }
