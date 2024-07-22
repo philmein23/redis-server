@@ -1,6 +1,7 @@
 const std = @import("std");
 const net = std.net;
 const time = std.time;
+const rand = std.crypto.random;
 
 const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get, info };
@@ -314,15 +315,25 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
 }
 
 fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void {
-    const terminator = "\r\n";
-    const val = if (is_replica) "role:slave" else "role:master";
+    _ = "\r\n";
+    _ = if (is_replica) "role:slave" else "role:master";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
+    var random_int_buffer: [40:0]u8 = undefined;
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ val.len, terminator, val, terminator });
+    for (random_int_buffer, 0..) |_, i| {
+        const rand_int = rand.int(u8);
+
+        if (std.ascii.isAlphanumeric(rand_int)) {
+            random_int_buffer[i] = rand_int;
+        }
+    }
+
+    const resp = try std.fmt.allocPrint(allocator, "${s}", .{random_int_buffer});
+    // const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ val.len, terminator, val, terminator });
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
