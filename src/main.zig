@@ -316,8 +316,7 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
 
 fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void {
     const terminator = "\r\n";
-    const val = if (is_replica) "role:slave" else "role:master";
-    const offset = "master_repl_offset:0";
+    const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -336,7 +335,9 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     }
 
     const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}", .{random_int_buffer});
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{d}{s}{s}{s}{d}{s}{s}{s}", .{ val.len, terminator, val, terminator, replica_id_key_val.len, terminator, replica_id_key_val, terminator, offset.len, terminator, offset, terminator });
+    defer allocator.free(replica_id_key_val);
+
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{d}{s}{s}{s}", .{ val.len, terminator, val, terminator, replica_id_key_val.len, terminator, replica_id_key_val, terminator });
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
