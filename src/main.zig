@@ -332,7 +332,7 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
         }
     }
 
-    const resp = try std.fmt.allocPrint(allocator, "${s}", .{random_int_buffer});
+    const resp = try std.fmt.allocPrint(allocator, "${s}", .{&random_int_buffer});
     // const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ val.len, terminator, val, terminator });
     defer allocator.free(resp);
 
