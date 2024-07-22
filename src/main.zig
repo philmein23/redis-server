@@ -324,11 +324,13 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     const allocator = gpa.allocator();
     var random_int_buffer: [40:0]u8 = undefined;
 
-    for (random_int_buffer, 0..) |_, i| {
+    var i = 0;
+    while (i < random_int_buffer.len) {
         const rand_int = rand.int(u8);
 
         if (std.ascii.isAlphanumeric(rand_int)) {
             random_int_buffer[i] = rand_int;
+            i += 1;
         }
     }
 
