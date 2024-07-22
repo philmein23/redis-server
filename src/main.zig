@@ -324,7 +324,7 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     const allocator = gpa.allocator();
     var random_int_buffer: [40:0]u8 = undefined;
 
-    var i = 0;
+    var i: usize = 0;
     while (i < random_int_buffer.len) {
         const rand_int = rand.int(u8);
 
