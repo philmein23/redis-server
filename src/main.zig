@@ -337,9 +337,10 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}", .{random_int_buffer});
     defer allocator.free(replica_id_key_val);
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{d}{s}{s}{s}", .{ val.len, terminator, val, terminator, replica_id_key_val.len, terminator, replica_id_key_val, terminator });
-    std.debug.print("REPL_ID - {s}\n", .{replica_id_key_val});
-    std.log.info("REPL_ID LOG - {s}\n", .{replica_id_key_val});
+    const total_len = val.len + replica_id_key_val.len;
+
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val, terminator });
+    std.log.info("REPL_ID LOG - {s}\n", .{resp});
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
