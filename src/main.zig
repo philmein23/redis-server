@@ -385,6 +385,7 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
 
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
     defer client_connection.stream.close();
+    std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
 
     var buffer: [1024:0]u8 = undefined;
 
@@ -432,6 +433,13 @@ pub fn main() !void {
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
             is_replica = true;
+
+            while (args.next()) |a| {
+                std.debug.print("MASTER ADDR & PORT: {s}", .{a});
+            }
+            // const master_port: u16 = "";
+            // const master_address = try net.Address.resolveIp("127.0.0.1", master_port);
+            // _ = try net.tcpConnectToAddress(master_address);
         }
     }
 
@@ -457,6 +465,7 @@ pub fn main() !void {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
 
+            std.debug.print("client_connection address: {}\n", .{@intFromPtr(&client_connection)});
             try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
         }
 
