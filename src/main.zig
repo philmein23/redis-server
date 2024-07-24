@@ -436,6 +436,24 @@ pub fn main() !void {
 
             while (args.next()) |a| {
                 std.debug.print("MASTER ADDR & PORT: {s}", .{a});
+                var start: usize = 0;
+                var end: usize = 0;
+                var addr: []u8 = undefined;
+
+                for (a, 0..) |ch, idx| {
+                    if (ch == ' ') {
+                        addr = a[start..end];
+                        if (a[idx + 1] != ' ') {
+                            end += 2; // skip whitespace and move index to next char
+                            start = end;
+                        }
+                        break;
+                    }
+                    end += 1;
+                }
+
+                const master_port = a[start..];
+                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}", .{ addr, master_port });
             }
             // const master_port: u16 = "";
             // const master_address = try net.Address.resolveIp("127.0.0.1", master_port);
