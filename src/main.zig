@@ -438,7 +438,7 @@ pub fn main() !void {
                 std.debug.print("MASTER ADDR & PORT: {s}", .{a});
                 var start: usize = 0;
                 var end: usize = 0;
-                var addr: []u8 = undefined;
+                var addr: []const u8 = undefined;
 
                 for (a, 0..) |ch, idx| {
                     if (ch == ' ') {
