@@ -444,12 +444,11 @@ pub fn main() !void {
                     if (ch == ' ') {
                         addr = a[start..end];
                         if (a[idx + 1] != ' ') {
-                            end = idx + 1; // skip whitespace and move index to next char
-                            start = end;
+                            start = idx + 1;
                         }
                         break;
                     }
-                    end += idx;
+                    end += 1;
                 }
 
                 const master_port = a[start..];
