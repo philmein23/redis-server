@@ -435,7 +435,6 @@ pub fn main() !void {
             is_replica = true;
 
             while (args.next()) |a| {
-                std.debug.print("MASTER ADDR & PORT: {s}", .{a});
                 var start: usize = 0;
                 var end: usize = 0;
                 var addr: []const u8 = undefined;
@@ -452,7 +451,7 @@ pub fn main() !void {
                 }
 
                 const master_port = a[start..];
-                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}", .{ addr, master_port });
+                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port });
             }
             // const master_port: u16 = "";
             // const master_address = try net.Address.resolveIp("127.0.0.1", master_port);
