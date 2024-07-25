@@ -452,10 +452,10 @@ pub fn main() !void {
 
                 const master_port = a[start..];
                 std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port });
+                const master_address = try net.Address.resolveIp("127.0.0.1", master_port);
+                const stream = try net.tcpConnectToAddress(master_address);
+                defer stream.close();
             }
-            // const master_port: u16 = "";
-            // const master_address = try net.Address.resolveIp("127.0.0.1", master_port);
-            // _ = try net.tcpConnectToAddress(master_address);
         }
     }
 
