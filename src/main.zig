@@ -423,6 +423,7 @@ pub fn main() !void {
     _ = args.skip();
 
     var port: u16 = 6379;
+    var master_port: []const u8 = undefined;
     var is_replica = false;
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
@@ -450,15 +451,8 @@ pub fn main() !void {
                     end += 1;
                 }
 
-                const master_port = a[start..];
+                master_port = a[start..];
                 std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port });
-                const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port, 10));
-                const stream = try net.tcpConnectToAddress(master_address);
-                defer stream.close();
-
-                var writer = stream.writer();
-                const ping_resp = "*1\r\n$4\r\nPING\r\n";
-                _ = try writer.write(ping_resp);
             }
         }
     }
@@ -472,6 +466,17 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
+
+    var replica_stream: ?std.net.Stream = null;
+    if (is_replica) {
+        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port, 10));
+        replica_stream = try net.tcpConnectToAddress(master_address);
+        defer replica_stream.?.close();
+
+        var replica_writer = replica_stream.?.writer();
+        const ping_resp = "*1\r\n$4\r\nPING\r\n";
+        _ = try replica_writer.write(ping_resp);
+    }
 
     const allocator = gpa.allocator();
 
