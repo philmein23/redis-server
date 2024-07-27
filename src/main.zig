@@ -423,7 +423,7 @@ pub fn main() !void {
     _ = args.skip();
 
     var port: u16 = 6379;
-    var master_port: []const u8 = undefined;
+    var master_port: ?[]const u8 = null;
     var is_replica = false;
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
@@ -452,7 +452,7 @@ pub fn main() !void {
                 }
 
                 master_port = a[start..];
-                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port });
+                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port.? });
             }
         }
     }
@@ -468,8 +468,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     var replica_stream: ?std.net.Stream = null;
-    if (is_replica) {
-        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port, 10));
+    if (is_replica and master_port != null) {
+        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
         replica_stream = try net.tcpConnectToAddress(master_address);
         defer replica_stream.?.close();
 
