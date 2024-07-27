@@ -455,6 +455,10 @@ pub fn main() !void {
                 const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port, 10));
                 const stream = try net.tcpConnectToAddress(master_address);
                 defer stream.close();
+
+                var writer = stream.writer();
+                const ping_resp = "*1\r\n$4\r\nPING\r\n";
+                _ = try writer.write(ping_resp);
             }
         }
     }
