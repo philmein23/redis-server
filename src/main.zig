@@ -492,7 +492,8 @@ pub fn main() !void {
         var buffer: [1024:0]u8 = undefined;
         const bytes_read = replica_stream.?.read(&buffer);
 
-        std.debug.print("REPLICA STREAM BYTES READ {any}, {s}", .{ bytes_read, &buffer });
+        std.debug.print("REPLICA STREAM BYTES READ {any}", .{bytes_read});
+        std.debug.print("REPLICA STREAM BYTES {any}", .{&buffer});
     }
 
     const allocator = gpa.allocator();
