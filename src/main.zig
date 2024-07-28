@@ -501,6 +501,7 @@ pub fn main() !void {
     while (true) {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
+            std.debug.print("BEFORE HAS REPLICA STREAM & PORT: {any}:{d}", .{ replica_stream != null, port });
 
             std.debug.print("client_connection address: {}\n", .{@intFromPtr(&client_connection)});
             try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica, replica_stream, port }));
