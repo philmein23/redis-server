@@ -480,7 +480,7 @@ pub fn main() !void {
         var buffer: [1024:0]u8 = undefined;
         const bytes_read_one = try replica_stream.?.read(&buffer); // master responds w/ +PONG
 
-        std.debug.print("REPLICA STREAM BYTES {d}:{any}", .{ bytes_read_one, &buffer });
+        std.debug.print("REPLICA STREAM BYTES {d}:{any}\n", .{ bytes_read_one, &buffer });
 
         const allocator = gpa.allocator();
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
@@ -491,7 +491,7 @@ pub fn main() !void {
         buffer = undefined;
 
         const bytes_read_two = try replica_stream.?.read(&buffer); // master responds w/ +OK
-        std.debug.print("REPLICA STREAM BYTES READ {d}:{any}", .{ bytes_read_two, &buffer });
+        std.debug.print("REPLICA STREAM BYTES READ {d}:{any}\n", .{ bytes_read_two, &buffer });
     }
 
     const allocator = gpa.allocator();
