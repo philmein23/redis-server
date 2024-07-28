@@ -497,6 +497,8 @@ pub fn main() !void {
     const cpus = try std.Thread.getCpuCount();
     try stdout.print("CPU core count {}\n", .{cpus});
 
+    std.debug.print("HAS REPLICA STREAM & PORT: {any}:{d}", .{ replica_stream != null, port });
+
     while (true) {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
