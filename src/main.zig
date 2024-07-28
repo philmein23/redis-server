@@ -516,7 +516,7 @@ pub fn main() !void {
             const client_connection = try server.accept();
 
             std.debug.print("client_connection address: {}\n", .{@intFromPtr(&client_connection)});
-            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica, replica_stream, port }));
+            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
         }
 
         for (threads.items) |thread| thread.detach();
