@@ -346,8 +346,19 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_ping(client_connection: net.Server.Connection) !void {
+fn handle_ping(client_connection: net.Server.Connection, replica_stream: ?std.net.Stream, replica_port: ?u16) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
+
+    if (replica_stream != null and replica_port != null) {
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+
+        const allocator = gpa.allocator();
+        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{replica_port.?});
+        defer allocator.free(resp);
+
+        _ = try replica_stream.?.writer().write(resp);
+    }
 }
 fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
     if (opt != null) {
@@ -383,7 +394,7 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
+fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool, replica_stream: ?std.net.Stream, replica_port: ?u16) !void {
     defer client_connection.stream.close();
     std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
 
@@ -409,7 +420,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
 
         switch (command.tag) {
             Tag.echo => try handle_echo(client_connection, command.args[0]),
-            Tag.ping => try handle_ping(client_connection),
+            Tag.ping => try handle_ping(client_connection, replica_stream, replica_port),
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
             Tag.info => try handle_info(client_connection, is_replica),
@@ -491,7 +502,7 @@ pub fn main() !void {
             const client_connection = try server.accept();
 
             std.debug.print("client_connection address: {}\n", .{@intFromPtr(&client_connection)});
-            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
+            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica, replica_stream, port }));
         }
 
         for (threads.items) |thread| thread.detach();
