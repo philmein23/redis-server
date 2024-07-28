@@ -492,6 +492,10 @@ pub fn main() !void {
 
         const bytes_read_two = try replica_stream.?.read(&buffer); // master responds w/ +OK
         std.debug.print("REPLICA STREAM BYTES READ {d}:{any}\n", .{ bytes_read_two, &buffer });
+
+        _ = try replica_stream.?.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
+
+        _ = try replica_stream.?.read(&buffer); // master responds w/ +OK
     }
 
     const allocator = gpa.allocator();
