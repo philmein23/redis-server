@@ -489,11 +489,10 @@ pub fn main() !void {
         const ping_resp = "*1\r\n$4\r\nPING\r\n";
         _ = try replica_writer.write(ping_resp);
 
-        const allocator = gpa.allocator();
-        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
-        defer allocator.free(resp);
+        var buffer: [1024:0]u8 = undefined;
+        const bytes_read = replica_stream.?.read(&buffer);
 
-        _ = try replica_stream.?.writer().write(resp);
+        std.debug.print("REPLICA STREAM BYTES READ {any}, {s}", .{ bytes_read, buffer });
     }
 
     const allocator = gpa.allocator();
