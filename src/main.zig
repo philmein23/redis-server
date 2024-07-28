@@ -490,10 +490,16 @@ pub fn main() !void {
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
-        const bytes_read = replica_stream.?.read(&buffer);
+        const bytes_read = try replica_stream.?.read(&buffer);
 
         std.debug.print("REPLICA STREAM BYTES READ {any}", .{bytes_read});
         std.debug.print("REPLICA STREAM BYTES {any}", .{&buffer});
+
+        const allocator = gpa.allocator();
+        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
+        defer allocator.free(resp);
+
+        _ = try replica_stream.?.writer().write(resp);
     }
 
     const allocator = gpa.allocator();
