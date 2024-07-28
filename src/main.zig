@@ -348,7 +348,7 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
 
 fn handle_ping(client_connection: net.Server.Connection, replica_stream: ?std.net.Stream, replica_port: ?u16) !void {
     std.debug.print("HAS REPLICA STREAM & PORT: {any}:{d}", .{ replica_stream != null, replica_port.? });
-    try client_connection.stream.writeAll("+PONG\r\n");
+    try client_connection.stream.writeAll("+PONG12\r\n");
 
     if (replica_stream != null and replica_port != null) {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
