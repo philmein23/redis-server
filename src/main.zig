@@ -349,10 +349,10 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
 fn handle_ping(client_connection: net.Server.Connection, replica_stream: ?std.net.Stream, replica_port: ?u16) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 
+    std.debug.print("HAS REPLICA STREAM & PORT: {any}:{d}", .{ replica_stream != null, replica_port.? });
     if (replica_stream != null and replica_port != null) {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         defer _ = gpa.deinit();
-        std.debug.print("HAS REPLICA STREAM & PORT: {any}:{d}", .{ replica_stream != null, replica_port.? });
 
         const allocator = gpa.allocator();
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{replica_port.?});
