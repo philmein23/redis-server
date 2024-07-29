@@ -467,10 +467,9 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var replica_stream: ?std.net.Stream = null;
     if (is_replica and master_port != null) {
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
-        replica_stream = try net.tcpConnectToAddress(master_address);
+        const replica_stream = try net.tcpConnectToAddress(master_address);
         defer replica_stream.?.close();
 
         var replica_writer = replica_stream.?.writer();
@@ -494,7 +493,6 @@ pub fn main() !void {
         std.debug.print("REPLICA STREAM BYTES READ {d}:{any}\n", .{ bytes_read_two, &buffer });
 
         _ = try replica_stream.?.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
-
         _ = try replica_stream.?.read(&buffer); // master responds w/ +OK
     }
 
