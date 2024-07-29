@@ -470,14 +470,14 @@ pub fn main() !void {
     if (is_replica and master_port != null) {
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
-        defer replica_stream.?.close();
+        defer replica_stream.close();
 
-        var replica_writer = replica_stream.?.writer();
+        var replica_writer = replica_stream.writer();
         const ping_resp = "*1\r\n$4\r\nPING\r\n";
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
-        const bytes_read_one = try replica_stream.?.read(&buffer); // master responds w/ +PONG
+        const bytes_read_one = try replica_stream.read(&buffer); // master responds w/ +PONG
 
         std.debug.print("REPLICA STREAM BYTES {d}:{any}\n", .{ bytes_read_one, &buffer });
 
@@ -485,15 +485,15 @@ pub fn main() !void {
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
         defer allocator.free(resp);
 
-        _ = try replica_stream.?.writer().write(resp);
+        _ = try replica_stream.writer().write(resp);
 
         buffer = undefined;
 
-        const bytes_read_two = try replica_stream.?.read(&buffer); // master responds w/ +OK
+        const bytes_read_two = try replica_stream.read(&buffer); // master responds w/ +OK
         std.debug.print("REPLICA STREAM BYTES READ {d}:{any}\n", .{ bytes_read_two, &buffer });
 
-        _ = try replica_stream.?.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
-        _ = try replica_stream.?.read(&buffer); // master responds w/ +OK
+        _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
+        _ = try replica_stream.read(&buffer); // master responds w/ +OK
     }
 
     const allocator = gpa.allocator();
