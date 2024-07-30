@@ -2,9 +2,8 @@ const std = @import("std");
 const net = std.net;
 const time = std.time;
 const rand = std.crypto.random;
-
 const Loc = struct { start: usize, end: usize };
-const Tag = enum { echo, ping, set, get, info };
+const Tag = enum { echo, ping, set, get, info, replconf, psync };
 const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
@@ -118,6 +117,14 @@ const Parser = struct {
             if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "info")) |_| {
                 command.tag = Tag.info;
             }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "replconf")) |_| {
+                command.tag = Tag.replconf;
+            }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "psync")) |_| {
+                command.tag = Tag.psync;
+            }
         }
 
         try self.expect_return_new_line_bytes();
@@ -160,6 +167,18 @@ const Parser = struct {
 
                 return command;
             },
+            Tag.replconf => {
+                while (self.peek() != 0) {
+                    _ = try self.parse_string();
+
+                    try self.expect_return_new_line_bytes();
+                }
+
+                return command;
+            },
+            Tag.psync => {
+                return command;
+            },
         }
     }
 
@@ -184,6 +203,10 @@ const Parser = struct {
                 if (std.ascii.isAlphanumeric(self.peek())) {
                     self.next();
                     arg.loc.end = self.curr_index;
+
+                    if (self.peek() == '-') {
+                        self.next();
+                    }
 
                     continue;
                 } else {
@@ -223,6 +246,13 @@ const Parser = struct {
         }
     }
 };
+
+test "test REPLCONF" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    try std.testing.expectEqual(Tag.replconf, command.tag);
+}
 
 test "test SET with expiry opt" {
     const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
