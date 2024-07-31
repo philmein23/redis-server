@@ -169,11 +169,13 @@ const Parser = struct {
             },
             Tag.replconf => {
                 while (self.peek() != 0) {
-                    _ = try self.parse_string();
+                    std.debug.print("REPLCONF peek: {}\n", .{self.peek()});
+                    const arg = try self.parse_string();
+
+                    std.debug.print("REPLCONF Arg: {s}\n", .{arg.content});
 
                     try self.expect_return_new_line_bytes();
                 }
-                try self.expect_return_new_line_bytes();
 
                 return command;
             },
@@ -237,6 +239,7 @@ const Parser = struct {
         if (self.peek() == '\r') {
             self.next();
         } else {
+            std.debug.print("CURRENT VALUE: {}", .{self.peek()});
             return error.ExpectedCarriageReturnByte;
         }
 
