@@ -237,7 +237,6 @@ const Parser = struct {
         if (self.peek() == '\r') {
             self.next();
         } else {
-            std.debug.print("CURRENT VALUE: {}\n", .{self.peek()});
             return error.ExpectedCarriageReturnByte;
         }
 
@@ -489,7 +488,6 @@ pub fn main() !void {
                 }
 
                 master_port = a[start..];
-                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port.? });
             }
         }
     }
