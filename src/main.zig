@@ -173,6 +173,7 @@ const Parser = struct {
 
                     try self.expect_return_new_line_bytes();
                 }
+                try self.expect_return_new_line_bytes();
 
                 return command;
             },
