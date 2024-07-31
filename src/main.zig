@@ -370,7 +370,6 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     const total_len = val.len + replica_id_key_val.len;
 
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
-    std.log.info("REPL_ID LOG - {s}\n", .{resp});
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
@@ -413,6 +412,10 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     _ = try client_connection.stream.writeAll(resp);
 }
 
+fn handle_replconf(client_connection: net.Server.Connection) !void {
+    try client_connection.stream.writeAll("+OK\r\n");
+}
+
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
     defer client_connection.stream.close();
     std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
@@ -443,6 +446,8 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
             Tag.info => try handle_info(client_connection, is_replica),
+            Tag.replconf => try handle_replconf(client_connection),
+            Tag.psync => break,
         }
     }
 }
@@ -507,9 +512,7 @@ pub fn main() !void {
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
-        const bytes_read_one = try replica_stream.read(&buffer); // master responds w/ +PONG
-
-        std.debug.print("REPLICA STREAM BYTES {d}:{any}\n", .{ bytes_read_one, &buffer });
+        _ = try replica_stream.read(&buffer); // master responds w/ +PONG
 
         const allocator = gpa.allocator();
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
@@ -519,9 +522,7 @@ pub fn main() !void {
 
         buffer = undefined;
 
-        const bytes_read_two = try replica_stream.read(&buffer); // master responds w/ +OK
-        std.debug.print("REPLICA STREAM BYTES READ {d}:{any}\n", .{ bytes_read_two, &buffer });
-
+        _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
