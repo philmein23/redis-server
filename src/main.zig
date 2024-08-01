@@ -2,9 +2,8 @@ const std = @import("std");
 const net = std.net;
 const time = std.time;
 const rand = std.crypto.random;
-
 const Loc = struct { start: usize, end: usize };
-const Tag = enum { echo, ping, set, get, info };
+const Tag = enum { echo, ping, set, get, info, replconf, psync };
 const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
@@ -62,6 +61,7 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !Command {
+        std.debug.print("BUFFER LENGTH {}\n", .{self.buffer.len});
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
@@ -118,6 +118,14 @@ const Parser = struct {
             if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "info")) |_| {
                 command.tag = Tag.info;
             }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "replconf")) |_| {
+                command.tag = Tag.replconf;
+            }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "psync")) |_| {
+                command.tag = Tag.psync;
+            }
         }
 
         try self.expect_return_new_line_bytes();
@@ -160,6 +168,18 @@ const Parser = struct {
 
                 return command;
             },
+            Tag.replconf => {
+                while (std.ascii.isASCII(self.peek()) and self.peek() != 0) {
+                    _ = try self.parse_string();
+
+                    try self.expect_return_new_line_bytes();
+                }
+
+                return command;
+            },
+            Tag.psync => {
+                return command;
+            },
         }
     }
 
@@ -184,6 +204,10 @@ const Parser = struct {
                 if (std.ascii.isAlphanumeric(self.peek())) {
                     self.next();
                     arg.loc.end = self.curr_index;
+
+                    if (self.peek() == '-') {
+                        self.next();
+                    }
 
                     continue;
                 } else {
@@ -223,6 +247,13 @@ const Parser = struct {
         }
     }
 };
+
+test "test REPLCONF" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    try std.testing.expectEqual(Tag.replconf, command.tag);
+}
 
 test "test SET with expiry opt" {
     const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
@@ -340,7 +371,6 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     const total_len = val.len + replica_id_key_val.len;
 
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
-    std.log.info("REPL_ID LOG - {s}\n", .{resp});
     defer allocator.free(resp);
 
     _ = try client_connection.stream.writeAll(resp);
@@ -383,6 +413,10 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     _ = try client_connection.stream.writeAll(resp);
 }
 
+fn handle_replconf(client_connection: net.Server.Connection) !void {
+    try client_connection.stream.writeAll("+OK\r\n");
+}
+
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
     defer client_connection.stream.close();
     std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
@@ -413,6 +447,8 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
             Tag.info => try handle_info(client_connection, is_replica),
+            Tag.replconf => try handle_replconf(client_connection),
+            Tag.psync => break,
         }
     }
 }
@@ -452,7 +488,6 @@ pub fn main() !void {
                 }
 
                 master_port = a[start..];
-                std.debug.print("MASTER ADDR & PORT 2: {s}:{s}\n", .{ addr, master_port.? });
             }
         }
     }
@@ -467,27 +502,30 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var replica_stream: ?std.net.Stream = null;
     if (is_replica and master_port != null) {
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
-        replica_stream = try net.tcpConnectToAddress(master_address);
-        defer replica_stream.?.close();
+        const replica_stream = try net.tcpConnectToAddress(master_address);
+        defer replica_stream.close();
 
-        var replica_writer = replica_stream.?.writer();
+        var replica_writer = replica_stream.writer();
         const ping_resp = "*1\r\n$4\r\nPING\r\n";
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
-        const bytes_read = try replica_stream.?.read(&buffer);
-
-        std.debug.print("REPLICA STREAM BYTES READ {any}", .{bytes_read});
-        std.debug.print("REPLICA STREAM BYTES {any}", .{&buffer});
+        _ = try replica_stream.read(&buffer); // master responds w/ +PONG
 
         const allocator = gpa.allocator();
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
         defer allocator.free(resp);
 
-        _ = try replica_stream.?.writer().write(resp);
+        _ = try replica_stream.writer().write(resp);
+
+        buffer = undefined;
+
+        _ = try replica_stream.read(&buffer); // master responds w/ +OK
+        _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
+        _ = try replica_stream.read(&buffer); // master responds w/ +OK
+        _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
     }
 
     const allocator = gpa.allocator();
