@@ -213,7 +213,7 @@ const Parser = struct {
                     self.next();
                     if (self.peek() == '1') {
                         self.next();
-                        arg_two.content = "-1";
+                        arg_two.content = "0";
 
                         command.args[1] = arg_two;
                     }
@@ -296,7 +296,7 @@ test "test PSYNC" {
     const command = try parser.parse();
     try std.testing.expectEqual(Tag.psync, command.tag);
     try std.testing.expectEqualSlices(u8, "?", command.args[0].content);
-    try std.testing.expectEqualSlices(u8, "-1", command.args[1].content);
+    try std.testing.expectEqualSlices(u8, "0", command.args[1].content);
 }
 
 test "test REPLCONF" {
