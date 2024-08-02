@@ -4,7 +4,7 @@ const time = std.time;
 const rand = std.crypto.random;
 const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get, info, replconf, psync };
-const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
+const Command = struct { loc: Loc, tag: Tag, args: []Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 
 const RedisStore = struct {
@@ -457,8 +457,8 @@ fn handle_replconf(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+OK\r\n");
 }
 
-fn handle_psync(allocator: std.mem.Allocator, client_connection: net.Server.Connection, replication_master_id: []u8, args: []Arg) !void {
-    const resp = try std.fmt.allocPrint(allocator, "+FULLRESYNC {s} {s}\r\n", .{ replication_master_id, args[1] });
+fn handle_psync(allocator: std.mem.Allocator, client_connection: net.Server.Connection, replication_master_id: []u8, args: []const Arg) !void {
+    const resp = try std.fmt.allocPrint(allocator, "+FULLRESYNC {s} {s}\r\n", .{ replication_master_id, args[1].content });
     defer allocator.free(resp);
 
     try client_connection.stream.writeAll(resp);
@@ -506,7 +506,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
             Tag.info => try handle_info(client_connection, is_replica, &master_replication_id),
             Tag.replconf => try handle_replconf(client_connection),
-            Tag.psync => try handle_psync(allocator, client_connection, &master_replication_id, &command.args),
+            Tag.psync => try handle_psync(allocator, client_connection, &master_replication_id, command.args),
         }
     }
 }
