@@ -396,7 +396,7 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_info(client_connection: net.Server.Connection, is_replica: bool, master_replication_id: [40]u8) !void {
+fn handle_info(client_connection: net.Server.Connection, is_replica: bool, master_replication_id: []u8) !void {
     const terminator = "\r\n";
     const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
@@ -504,7 +504,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
             Tag.ping => try handle_ping(client_connection),
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
-            Tag.info => try handle_info(client_connection, is_replica, master_replication_id),
+            Tag.info => try handle_info(client_connection, is_replica, &master_replication_id),
             Tag.replconf => try handle_replconf(client_connection),
             Tag.psync => try handle_psync(allocator, client_connection, &master_replication_id),
         }
