@@ -178,6 +178,48 @@ const Parser = struct {
                 return command;
             },
             Tag.psync => {
+                if (self.peek() == '$') {
+                    self.next();
+                }
+
+                while (std.ascii.isDigit(self.peek())) {
+                    self.next();
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                var arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
+                if (self.peek() == '?') {
+                    self.next();
+
+                    arg.content = "?";
+                    command.args[0] = arg;
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                if (self.peek() == '$') {
+                    self.next();
+                }
+
+                while (std.ascii.isDigit(self.peek())) {
+                    self.next();
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                var arg_two = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
+                if (self.peek() == '-') {
+                    self.next();
+                    if (self.peek() == '1') {
+                        self.next();
+                        arg_two.content = "-1";
+
+                        command.args[1] = arg_two;
+                    }
+                }
+                try self.expect_return_new_line_bytes();
+
                 return command;
             },
         }
@@ -247,6 +289,15 @@ const Parser = struct {
         }
     }
 };
+
+test "test PSYNC" {
+    const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    try std.testing.expectEqual(Tag.psync, command.tag);
+    try std.testing.expectEqualSlices(u8, "?", command.args[0].content);
+    try std.testing.expectEqualSlices(u8, "-1", command.args[1].content);
+}
 
 test "test REPLCONF" {
     const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
@@ -345,7 +396,7 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void {
+fn handle_info(client_connection: net.Server.Connection, is_replica: bool, master_replication_id: [40]u8) !void {
     const terminator = "\r\n";
     const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
@@ -353,19 +404,8 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-    var random_int_buffer: [40:0]u8 = undefined;
 
-    var i: usize = 0;
-    while (i < random_int_buffer.len) {
-        const rand_int = rand.int(u8);
-
-        if (std.ascii.isAlphanumeric(rand_int)) {
-            random_int_buffer[i] = rand_int;
-            i += 1;
-        }
-    }
-
-    const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ random_int_buffer, terminator });
+    const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ master_replication_id, terminator });
     defer allocator.free(replica_id_key_val);
 
     const total_len = val.len + replica_id_key_val.len;
@@ -417,6 +457,13 @@ fn handle_replconf(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+OK\r\n");
 }
 
+fn handle_psync(allocator: std.mem.Allocator, client_connection: net.Server.Connection, replication_master_id: []u8) !void {
+    const resp = try std.fmt.allocPrint(allocator, "+FULLRESYNC {s} 0\r\n", .{replication_master_id});
+    defer allocator.free(resp);
+
+    try client_connection.stream.writeAll(resp);
+}
+
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
     defer client_connection.stream.close();
     std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
@@ -434,6 +481,17 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
+    var master_replication_id: [40:0]u8 = undefined;
+    var i: usize = 0;
+    while (i < master_replication_id.len) {
+        const rand_int = rand.int(u8);
+
+        if (std.ascii.isAlphanumeric(rand_int)) {
+            master_replication_id[i] = rand_int;
+            i += 1;
+        }
+    }
+
     while (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
@@ -446,9 +504,9 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
             Tag.ping => try handle_ping(client_connection),
             Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
             Tag.get => try handle_get(client_connection, &store, command.args[0]),
-            Tag.info => try handle_info(client_connection, is_replica),
+            Tag.info => try handle_info(client_connection, is_replica, master_replication_id),
             Tag.replconf => try handle_replconf(client_connection),
-            Tag.psync => break,
+            Tag.psync => try handle_psync(allocator, client_connection, &master_replication_id),
         }
     }
 }
