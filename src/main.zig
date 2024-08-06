@@ -39,7 +39,12 @@ const RedisStore = struct {
         }
     }
 
-    pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?[]const u8) !void {
+    pub fn set(
+        self: *RedisStore,
+        key: []const u8,
+        val: []const u8,
+        exp: ?[]const u8,
+    ) !void {
         var rv = RedisVal{ .val = val };
         if (exp) |e| {
             const now = time.milliTimestamp();
@@ -396,7 +401,11 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_info(client_connection: net.Server.Connection, is_replica: bool, master_replication_id: []u8) !void {
+fn handle_info(
+    client_connection: net.Server.Connection,
+    is_replica: bool,
+    master_replication_id: []u8,
+) !void {
     const terminator = "\r\n";
     const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
@@ -419,7 +428,13 @@ fn handle_info(client_connection: net.Server.Connection, is_replica: bool, maste
 fn handle_ping(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+PONG\r\n");
 }
-fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
+fn handle_set(
+    client_connection: net.Server.Connection,
+    store: *RedisStore,
+    key: Arg,
+    val: Arg,
+    opt: ?Arg,
+) !void {
     if (opt != null) {
         try store.set(key.content, val.content, opt.?.content);
     } else {
@@ -428,11 +443,29 @@ fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key:
 
     const resp = "+OK\r\n";
     _ = try client_connection.stream.writeAll(resp);
+
+    // const cwd = std.fs.cwd();
+    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
+    //
+    // var read_buf: [40]u8 = undefined;
+    //
+    // const file = try cwd.openFile("db.rdb", .{});
+    // defer file.close();
+    //
+    // var buf_reader = std.io.bufferedReader(file.reader());
+
+    //
+    // const num_bytes_read = try reader.read(&read_buf);
+    //
+    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+    //     read_buf,
+    //     num_bytes_read,
+    // });
 }
 fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
     const val = store.get(key.content) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
-            try client_connection.stream.writeAll("$-1\r\n");
+            try client_connection.stream.writeAll("");
 
             return;
         },
@@ -457,10 +490,51 @@ fn handle_replconf(client_connection: net.Server.Connection) !void {
     try client_connection.stream.writeAll("+OK\r\n");
 }
 
-fn handle_psync(allocator: std.mem.Allocator, client_connection: net.Server.Connection, replication_master_id: []u8, args: []const Arg) !void {
-    const resp = try std.fmt.allocPrint(allocator, "+FULLRESYNC {s} {s}\r\n", .{ replication_master_id, args[1].content });
+fn handle_psync(
+    allocator: std.mem.Allocator,
+    client_connection: net.Server.Connection,
+    replication_master_id: []u8,
+    args: []const Arg,
+) !void {
+    const resp = try std.fmt.allocPrint(
+        allocator,
+        "+FULLRESYNC {s} {s}\r\n",
+        .{ replication_master_id, args[1].content },
+    );
     defer allocator.free(resp);
 
+    try client_connection.stream.writeAll(resp);
+
+    const cwd = std.fs.cwd();
+    try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
+
+    var read_buf: [40]u8 = undefined;
+
+    const file = try cwd.openFile("db.rdb", .{});
+    defer file.close();
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    const reader = buf_reader.reader();
+
+    const num_bytes_read = try reader.read(&read_buf);
+    // var to_ascii: [num_bytes_read]u8 = undefined;
+
+    // var curr_index: usize = 0;
+    // while (std.ascii.isASCII(read_buf[curr_index])) {
+    //
+    // }
+
+    std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+        read_buf,
+        num_bytes_read,
+    });
+
+    const rdb_resp = try std.fmt.allocPrint(
+        allocator,
+        "${}\r\n{s}",
+        .{ num_bytes_read, read_buf },
+    );
+    defer allocator.free(rdb_resp);
     try client_connection.stream.writeAll(resp);
 }
 
@@ -598,7 +672,11 @@ pub fn main() !void {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
 
-            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
+            try threads.append(try std.Thread.spawn(
+                .{},
+                handle_connection,
+                .{ client_connection, stdout, is_replica },
+            ));
         }
 
         for (threads.items) |thread| thread.detach();
