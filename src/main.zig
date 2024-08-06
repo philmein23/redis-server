@@ -535,7 +535,7 @@ fn handle_psync(
         .{ num_bytes_read, read_buf },
     );
     defer allocator.free(rdb_resp);
-    try client_connection.stream.writeAll(resp);
+    try client_connection.stream.writeAll(rdb_resp);
 }
 
 fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
