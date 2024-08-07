@@ -537,6 +537,10 @@ fn handle_psync(
         "${d}\r\n{s}",
         .{ decoded_length, decoded_buffer },
     );
+    std.debug.print("Decoded length: {d}, decoded buffer: {s}\n", .{
+        decoded_length,
+        decoded_buffer,
+    });
     defer allocator.free(rdb_resp);
     try client_connection.stream.writeAll(rdb_resp);
 }
