@@ -534,7 +534,7 @@ fn handle_psync(
 
     const rdb_resp = try std.fmt.allocPrint(
         allocator,
-        "${}\r\n{}",
+        "${d}\r\n{s}",
         .{ decoded_length, decoded_buffer },
     );
     defer allocator.free(rdb_resp);
