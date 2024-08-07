@@ -27,7 +27,7 @@ const RedisStore = struct {
         if (self.table.get(key)) |v| {
             if (v.expiry) |exp| {
                 const now = time.milliTimestamp();
-                if (now <= exp) {
+                if (now < exp) {
                     return v.val;
                 } else {
                     return error.KeyHasExceededExpirationThreshold;
@@ -139,8 +139,6 @@ const Parser = struct {
             Tag.ping => return command,
             Tag.echo, Tag.get => {
                 command.args[0] = try self.parse_string();
-                std.debug.print("Command.args[0] address: {*}, {*}\n", .{ &command.args[0], &command.args });
-                std.debug.print("Arg address (after returned): {*}, {*}\n", .{ &command.args[0], &command.args[0].loc });
                 return command;
             },
             Tag.set => {
