@@ -563,7 +563,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
         }
     }
 
-    if (try reader.read(&buffer) > 0) {
+    while (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
         const command = try parser.parse();
