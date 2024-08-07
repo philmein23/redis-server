@@ -563,7 +563,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
         }
     }
 
-    while (try reader.read(&buffer) > 0) {
+    if (try reader.read(&buffer) > 0) {
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
         const command = try parser.parse();
@@ -653,8 +653,6 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-        _ = try replica_stream.read(&buffer);
-        std.debug.print("REPLICA BUFFER: {any}", .{buffer});
     }
 
     const allocator = gpa.allocator();
