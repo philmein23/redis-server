@@ -637,7 +637,7 @@ pub fn main() !void {
         defer replica_stream.close();
 
         var replica_writer = replica_stream.writer();
-        const ping_resp = "*1\r\n$4\r\nPING2\r\n";
+        const ping_resp = "*1\r\n$4\r\nPING\r\n";
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
