@@ -65,7 +65,6 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !Command {
-        std.debug.print("BUFFER LENGTH {}\n", .{self.buffer.len});
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
@@ -259,11 +258,7 @@ const Parser = struct {
                 }
             }
 
-            std.debug.print("Command ARG content {s}\n", .{self.buffer[arg.loc.start .. arg.loc.end + 1]});
-
             arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
-
-            std.debug.print("Arg address (Before returned): {*}, {*}\n", .{ &arg, &arg.loc });
 
             return arg;
         } else {
@@ -345,7 +340,6 @@ test "test SET and GET command" {
 
     var parser = Parser.init(bytes);
     const command = try parser.parse();
-    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
     try store.set(command.args[0].content, command.args[1].content, null);
     try std.testing.expectEqual(Tag.set, command.tag);
 
@@ -366,7 +360,6 @@ test "test parse PING command" {
     var parser = Parser.init(bytes);
     const command = try parser.parse();
 
-    std.debug.print("Command ARG content: {s}\n", .{command.args[0].content});
     try std.testing.expectEqual(Tag.ping, command.tag);
 }
 
@@ -644,7 +637,7 @@ pub fn main() !void {
         defer replica_stream.close();
 
         var replica_writer = replica_stream.writer();
-        const ping_resp = "*1\r\n$4\r\nPING\r\n";
+        const ping_resp = "*1\r\n$4\r\nPING2\r\n";
         _ = try replica_writer.write(ping_resp);
 
         var buffer: [1024:0]u8 = undefined;
