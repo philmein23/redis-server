@@ -505,34 +505,37 @@ fn handle_psync(
 
     try client_connection.stream.writeAll(resp);
 
-    const cwd = std.fs.cwd();
-    try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
-
-    var read_buf: [40]u8 = undefined;
-
-    const file = try cwd.openFile("db.rdb", .{});
-    defer file.close();
-
-    var buf_reader = std.io.bufferedReader(file.reader());
-    const reader = buf_reader.reader();
-
-    const num_bytes_read = try reader.read(&read_buf);
-    // var to_ascii: [num_bytes_read]u8 = undefined;
-
-    // var curr_index: usize = 0;
-    // while (std.ascii.isASCII(read_buf[curr_index])) {
+    // const cwd = std.fs.cwd();
+    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
     //
-    // }
+    // var read_buf: [40]u8 = undefined;
+    //
+    // const file = try cwd.openFile("db.rdb", .{});
+    // defer file.close();
+    //
+    // var buf_reader = std.io.bufferedReader(file.reader());
+    // const reader = buf_reader.reader();
+    //
+    // const num_bytes_read = try reader.read(&read_buf);
+    //
+    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+    //     read_buf,
+    //     num_bytes_read,
+    // });
 
-    std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
-        read_buf,
-        num_bytes_read,
-    });
+    const encoded_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+    const Decoder = std.base64.standard.Decoder;
+
+    const decoded_length = try Decoder.calcSizeForSlice(encoded_empty_rdb);
+    const decoded_buffer = try allocator.alloc(u8, decoded_length);
+    defer allocator.free(decoded_buffer);
+
+    try Decoder.decode(decoded_buffer, encoded_empty_rdb);
 
     const rdb_resp = try std.fmt.allocPrint(
         allocator,
-        "${}\r\n{s}",
-        .{ num_bytes_read, read_buf },
+        "${}\r\n{}",
+        .{ decoded_length, decoded_buffer },
     );
     defer allocator.free(rdb_resp);
     try client_connection.stream.writeAll(rdb_resp);
