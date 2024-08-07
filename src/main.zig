@@ -51,7 +51,6 @@ const RedisStore = struct {
             const parse_to_int = try std.fmt.parseInt(i64, e, 10);
 
             rv.expiry = now + parse_to_int;
-            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, NOW: {any}, EXP: {any}, NEW_EXP: {any}\n", .{ key, val, now, parse_to_int, rv.expiry });
         }
         try self.table.put(key, rv);
     }
@@ -463,7 +462,7 @@ fn handle_set(
 fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
     const val = store.get(key.content) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
-            try client_connection.stream.writeAll("");
+            try client_connection.stream.writeAll("$-1\r\n");
 
             return;
         },
