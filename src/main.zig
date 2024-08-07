@@ -537,7 +537,7 @@ fn handle_psync(
         "${d}\r\n{s}",
         .{ decoded_length, decoded_buffer },
     );
-    std.debug.print("Decoded length: {d}, decoded buffer: {s}\n", .{
+    std.debug.print("Decoded length: {d}, decoded buffer: {any}\n", .{
         decoded_length,
         decoded_buffer,
     });
