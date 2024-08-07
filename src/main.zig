@@ -564,6 +564,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
     }
 
     while (try reader.read(&buffer) > 0) {
+        try stdout.print("Connection received {}, buffer being read into\n", .{client_connection.address});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
         const command = try parser.parse();
