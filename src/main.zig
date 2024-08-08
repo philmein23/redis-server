@@ -633,6 +633,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     if (is_replica and master_port != null) {
+        std.debug.print("IS REPLICA HERE", .{});
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
         defer replica_stream.close();
