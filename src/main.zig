@@ -615,14 +615,17 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
             Tag.echo => try handle_echo(stream, command.args[0]),
             Tag.ping => try handle_ping(stream),
             Tag.set => {
-                try handle_set(
-                    stream,
-                    &store,
-                    command.args[0],
-                    command.args[1],
-                    opt,
-                );
-                try state.forward_cmd(&buffer);
+                if (opt != null) {
+                    try store.set(command.args[0], command.args[1], opt.?.content);
+                } else {
+                    try store.set(command.args[0], command.args[1], null);
+                }
+
+                if (state.role == .master) {
+                    const resp = "+OK\r\n";
+                    _ = try stream.write(resp);
+                    try state.forward_cmd(&buffer);
+                }
             },
             Tag.get => try handle_get(stream, &store, command.args[0]),
             Tag.info => try handle_info(
