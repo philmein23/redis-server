@@ -23,6 +23,7 @@ const Replica = struct {
 const ServerState = struct {
     replicas: []Replica,
     role: Role = .master,
+    replica_count: u8 = 0,
 
     pub fn init() ServerState {
         return .{ .replicas = undefined };
@@ -35,7 +36,9 @@ const ServerState = struct {
     }
 
     pub fn add_replica(self: *ServerState, stream: net.Stream) void {
-        self.replicas[self.replicas.len] = Replica.init(stream);
+        self.replicas[self.replica_count] = Replica.init(stream);
+
+        self.replica_count += 1;
     }
 };
 const RedisStore = struct {
