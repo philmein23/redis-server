@@ -6,7 +6,38 @@ const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get, info, replconf, psync };
 const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
+const Role = enum { master, slave };
 
+const Replica = struct {
+    stream: net.Stream,
+
+    pub fn init(stream: net.Stream) Replica {
+        return .{ .stream = stream };
+    }
+
+    pub fn write(self: *Replica, cmd_buf: []const u8) !void {
+        _ = try self.stream.write(cmd_buf);
+    }
+};
+
+const ServerState = struct {
+    replicas: []Replica,
+    role: Role = .master,
+
+    pub fn init() ServerState {
+        return .{ .replicas = undefined };
+    }
+
+    pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
+        if (self.replicas.len == 0) return error.NoReplicasToForwardCmd;
+
+        try self.replicas[0].write(cmd_buf);
+    }
+
+    pub fn add_replica(self: *ServerState, stream: net.Stream) void {
+        self.replicas[self.replicas.len] = Replica.init(stream);
+    }
+};
 const RedisStore = struct {
     table: std.StringHashMap(RedisVal),
 
@@ -535,7 +566,7 @@ fn handle_psync(
     _ = try stream.write(rdb_resp);
 }
 
-fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool) !void {
+fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, state: *ServerState) !void {
     defer stream.close();
 
     var buffer: [1024:0]u8 = undefined;
@@ -571,11 +602,33 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool) !voi
         switch (command.tag) {
             Tag.echo => try handle_echo(stream, command.args[0]),
             Tag.ping => try handle_ping(stream),
-            Tag.set => try handle_set(stream, &store, command.args[0], command.args[1], opt),
+            Tag.set => {
+                try handle_set(
+                    stream,
+                    &store,
+                    command.args[0],
+                    command.args[1],
+                    opt,
+                );
+                try state.forward_cmd(&buffer);
+            },
             Tag.get => try handle_get(stream, &store, command.args[0]),
-            Tag.info => try handle_info(stream, is_replica, &master_replication_id),
+            Tag.info => try handle_info(
+                stream,
+                is_replica,
+                &master_replication_id,
+            ),
             Tag.replconf => try handle_replconf(stream),
-            Tag.psync => try handle_psync(allocator, stream, &master_replication_id, &command.args),
+            Tag.psync => {
+                try handle_psync(
+                    allocator,
+                    stream,
+                    &master_replication_id,
+                    &command.args,
+                );
+
+                state.add_replica(stream);
+            },
         }
     }
 }
@@ -588,6 +641,8 @@ pub fn main() !void {
     var port: u16 = 6379;
     var master_port: ?[]const u8 = null;
     var is_replica = false;
+
+    var state = ServerState.init();
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
@@ -615,6 +670,7 @@ pub fn main() !void {
                 }
 
                 master_port = a[start..];
+                state.role = .slave;
             }
         }
     }
@@ -670,7 +726,7 @@ pub fn main() !void {
             try threads.append(try std.Thread.spawn(
                 .{},
                 handle_connection,
-                .{ client_connection.stream, stdout, is_replica },
+                .{ client_connection.stream, stdout, is_replica, &state },
             ));
         }
 
