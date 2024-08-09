@@ -24,6 +24,13 @@ const ServerState = struct {
     replicas: [5]Replica,
     role: Role = .master,
     replica_count: u8 = 0,
+    nums: [5]u8 = undefined,
+
+    // testing
+    pub fn add_num(self: *ServerState, num: u8) void {
+        std.debug.print("NUMS LENGTH: {}, NUM: {any}\n", .{ self.nums.len, self.nums });
+        self.nums[self.nums.len - 1] = num;
+    }
 
     pub fn init() ServerState {
         return .{ .replicas = undefined };
@@ -648,6 +655,8 @@ pub fn main() !void {
     var is_replica = false;
 
     var state = ServerState.init();
+    // testing
+    state.add_num('c');
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
@@ -690,38 +699,47 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    if (is_replica and master_port != null) {
-        std.debug.print("IS REPLICA HERE", .{});
-        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
-        const replica_stream = try net.tcpConnectToAddress(master_address);
-        defer replica_stream.close();
+    // if (is_replica and master_port != null) {
+    std.debug.print("IS REPLICA HERE", .{});
+    // const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
+    const master_address = try net.Address.resolveIp("127.0.0.1", port);
+    const replica_stream = try net.tcpConnectToAddress(master_address);
+    defer replica_stream.close();
 
-        var replica_writer = replica_stream.writer();
-        const ping_resp = "*1\r\n$4\r\nPING\r\n";
-        _ = try replica_writer.write(ping_resp);
+    var replica_writer = replica_stream.writer();
+    const ping_resp = "*1\r\n$4\r\nPING\r\n";
+    _ = try replica_writer.write(ping_resp);
 
-        var buffer: [1024:0]u8 = undefined;
-        _ = try replica_stream.read(&buffer); // master responds w/ +PONG
-
-        const allocator = gpa.allocator();
-        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
-        defer allocator.free(resp);
-
-        _ = try replica_stream.writer().write(resp);
-
-        _ = try replica_stream.read(&buffer); // master responds w/ +OK
-        _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
-        _ = try replica_stream.read(&buffer); // master responds w/ +OK
-        _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-    }
+    var buffer: [1024:0]u8 = undefined;
+    _ = try replica_stream.read(&buffer); // master responds w/ +PONG
 
     const allocator = gpa.allocator();
+    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
+    defer allocator.free(resp);
+
+    _ = try replica_stream.writer().write(resp);
+
+    _ = try replica_stream.read(&buffer); // master responds w/ +OK
+    _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
+    _ = try replica_stream.read(&buffer); // master responds w/ +OK
+    _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+    // }
+
+    // const allocator = gpa.allocator();
 
     var threads = std.ArrayList(std.Thread).init(allocator);
     defer threads.deinit();
 
     const cpus = try std.Thread.getCpuCount();
     try stdout.print("CPU core count {}\n", .{cpus});
+
+    for (0..cpus) |_| {
+        try threads.append(try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{ replica_stream, stdout, is_replica, &state },
+        ));
+    }
 
     while (true) {
         for (0..cpus) |_| {
