@@ -520,7 +520,7 @@ fn handle_psync(
     allocator: std.mem.Allocator,
     stream: net.Stream,
     replication_master_id: []u8,
-    args: []const Arg,
+    args: []Arg,
 ) !void {
     const resp = try std.fmt.allocPrint(
         allocator,
@@ -600,7 +600,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
-        const command = try parser.parse();
+        var command = try parser.parse();
 
         const opt = command.opt orelse null;
 
