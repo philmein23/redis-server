@@ -376,7 +376,7 @@ test "test parse ECHO command" {
     try std.testing.expectEqualSlices(u8, exp, command.args[0].content);
 }
 
-fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
+fn handle_echo(stream: net.Stream, arg: Arg) !void {
     const terminator = "\r\n";
     const length = arg.content.len;
 
@@ -388,11 +388,11 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, arg.content, terminator });
     defer allocator.free(resp);
 
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 }
 
 fn handle_info(
-    client_connection: net.Server.Connection,
+    stream: net.Stream,
     is_replica: bool,
     master_replication_id: []u8,
 ) !void {
@@ -412,14 +412,14 @@ fn handle_info(
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
     defer allocator.free(resp);
 
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 }
 
-fn handle_ping(client_connection: net.Server.Connection) !void {
-    try client_connection.stream.writeAll("+PONG\r\n");
+fn handle_ping(stream: net.Stream) !void {
+    try stream.writeAll("+PONG\r\n");
 }
 fn handle_set(
-    client_connection: net.Server.Connection,
+    stream: net.Stream,
     store: *RedisStore,
     key: Arg,
     val: Arg,
@@ -432,7 +432,7 @@ fn handle_set(
     }
 
     const resp = "+OK\r\n";
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 
     // const cwd = std.fs.cwd();
     // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
@@ -452,10 +452,10 @@ fn handle_set(
     //     num_bytes_read,
     // });
 }
-fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
+fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
     const val = store.get(key.content) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
-            try client_connection.stream.writeAll("$-1\r\n");
+            _ = try stream.write("$-1\r\n");
 
             return;
         },
@@ -473,16 +473,16 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
     defer allocator.free(resp);
 
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 }
 
-fn handle_replconf(client_connection: net.Server.Connection) !void {
-    try client_connection.stream.writeAll("+OK\r\n");
+fn handle_replconf(stream: net.Stream) !void {
+    try stream.writeAll("+OK\r\n");
 }
 
 fn handle_psync(
     allocator: std.mem.Allocator,
-    client_connection: net.Server.Connection,
+    stream: net.Stream,
     replication_master_id: []u8,
     args: []const Arg,
 ) !void {
@@ -493,7 +493,7 @@ fn handle_psync(
     );
     defer allocator.free(resp);
 
-    try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 
     // const cwd = std.fs.cwd();
     // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
@@ -532,18 +532,15 @@ fn handle_psync(
         decoded_buffer,
     });
     defer allocator.free(rdb_resp);
-    try client_connection.stream.writeAll(rdb_resp);
+    _ = try stream.write(rdb_resp);
 }
 
-fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
-    defer client_connection.stream.close();
-    std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
+fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool) !void {
+    defer stream.close();
 
     var buffer: [1024:0]u8 = undefined;
 
-    const reader = client_connection.stream.reader();
-
-    try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
+    const reader = stream.reader();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -564,7 +561,7 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
     }
 
     while (try reader.read(&buffer) > 0) {
-        try stdout.print("Connection received {}, buffer being read into\n", .{client_connection.address});
+        try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
         const command = try parser.parse();
@@ -572,13 +569,13 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
         const opt = command.opt orelse null;
 
         switch (command.tag) {
-            Tag.echo => try handle_echo(client_connection, command.args[0]),
-            Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
-            Tag.get => try handle_get(client_connection, &store, command.args[0]),
-            Tag.info => try handle_info(client_connection, is_replica, &master_replication_id),
-            Tag.replconf => try handle_replconf(client_connection),
-            Tag.psync => try handle_psync(allocator, client_connection, &master_replication_id, &command.args),
+            Tag.echo => try handle_echo(stream, command.args[0]),
+            Tag.ping => try handle_ping(stream),
+            Tag.set => try handle_set(stream, &store, command.args[0], command.args[1], opt),
+            Tag.get => try handle_get(stream, &store, command.args[0]),
+            Tag.info => try handle_info(stream, is_replica, &master_replication_id),
+            Tag.replconf => try handle_replconf(stream),
+            Tag.psync => try handle_psync(allocator, stream, &master_replication_id, &command.args),
         }
     }
 }
@@ -668,11 +665,12 @@ pub fn main() !void {
     while (true) {
         for (0..cpus) |_| {
             const client_connection = try server.accept();
+            try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
             try threads.append(try std.Thread.spawn(
                 .{},
                 handle_connection,
-                .{ client_connection, stdout, is_replica },
+                .{ client_connection.stream, stdout, is_replica },
             ));
         }
 
