@@ -647,6 +647,8 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
             },
         }
     }
+
+    std.debug.print("Closing connection....", .{});
 }
 
 pub fn main() !void {
