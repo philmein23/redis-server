@@ -616,9 +616,9 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
             Tag.ping => try handle_ping(stream),
             Tag.set => {
                 if (opt != null) {
-                    try store.set(command.args[0], command.args[1], opt.?.content);
+                    try store.set(command.args[0].content, command.args[1].content, opt.?.content);
                 } else {
-                    try store.set(command.args[0], command.args[1], null);
+                    try store.set(command.args[0].content, command.args[1].content, null);
                 }
 
                 if (state.role == .master) {
