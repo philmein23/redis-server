@@ -21,7 +21,7 @@ const Replica = struct {
 };
 
 const ServerState = struct {
-    replicas: []Replica,
+    replicas: [5]Replica,
     role: Role = .master,
     replica_count: u8 = 0,
 
