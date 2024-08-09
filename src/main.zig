@@ -624,6 +624,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
                 if (state.role == .master) {
                     const resp = "+OK\r\n";
                     _ = try stream.write(resp);
+                    std.debug.print("SET FORWARD: {s}", .{&buffer});
                     try state.forward_cmd(&buffer);
                 }
             },
