@@ -32,7 +32,9 @@ const ServerState = struct {
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
         if (self.replicas.len == 0) return error.NoReplicasToForwardCmd;
 
-        try self.replicas[0].write(cmd_buf);
+        for (0..self.replica_count) |i| {
+            try self.replicas[i].write(cmd_buf);
+        }
     }
 
     pub fn add_replica(self: *ServerState, stream: net.Stream) void {
