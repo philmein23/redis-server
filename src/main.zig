@@ -518,9 +518,7 @@ fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
     _ = try stream.write(resp);
 }
 
-fn handle_replconf(stream: net.Stream) !void {
-    try stream.writeAll("+OK\r\n");
-}
+fn handle_replconf(stream: net.Stream) !void {}
 
 fn handle_psync(
     allocator: std.mem.Allocator,
@@ -579,7 +577,12 @@ fn handle_psync(
 }
 
 fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !void {
-    defer stream.close();
+    var close_stream = true;
+    defer {
+        if (close_stream) {
+            stream.close();
+        }
+    }
 
     var buffer: [1024:0]u8 = undefined;
 
@@ -624,7 +627,10 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 stream,
                 state,
             ),
-            Tag.replconf => try handle_replconf(stream),
+            Tag.replconf => {
+                close_stream = false;
+                _ = try stream.write("+OK\r\n");
+            },
             Tag.psync => {
                 try handle_psync(
                     allocator,
@@ -711,7 +717,6 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     if (master_port != null) {
-        std.debug.print("IS REPLICA HERE", .{});
         const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
@@ -733,7 +738,7 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
 
-        std.debug.print("Synchronized with master...", .{});
+        std.debug.print("Replica synchronized with master...", .{});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
