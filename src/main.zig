@@ -700,7 +700,9 @@ pub fn main() !void {
             }
 
             state.role = .slave;
-        } else {
+        }
+
+        if (state.role == .master) {
             var master_replication_id: [40:0]u8 = undefined;
             var i: usize = 0;
             while (i < master_replication_id.len) {
