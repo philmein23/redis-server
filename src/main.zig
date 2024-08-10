@@ -729,26 +729,15 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer);
     }
 
-    const allocator = gpa.allocator();
-
-    var threads = std.ArrayList(std.Thread).init(allocator);
-    defer threads.deinit();
-
-    const cpus = try std.Thread.getCpuCount();
-    try stdout.print("CPU core count {}\n", .{cpus});
-
     while (true) {
-        for (0..cpus) |_| {
-            const client_connection = try server.accept();
-            try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
+        const client_connection = try server.accept();
+        try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-            try threads.append(try std.Thread.spawn(
-                .{},
-                handle_connection,
-                .{ client_connection.stream, stdout, &state },
-            ));
-        }
-
-        for (threads.items) |thread| thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{ client_connection.stream, stdout, &state },
+        );
+        thread.detach();
     }
 }
