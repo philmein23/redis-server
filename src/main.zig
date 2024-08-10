@@ -610,6 +610,8 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
 
         leaned_buffer = buffer[0..end];
 
+        std.debug.print("LEANED BUFFER: {s}", .{leaned_buffer});
+
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
@@ -749,7 +751,7 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
 
-        std.debug.print("Replica synchronized with master...", .{});
+        std.debug.print("Replica synchronized with master...\n", .{});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
