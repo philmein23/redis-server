@@ -750,12 +750,12 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
 
         std.debug.print("Replica synchronized with master...", .{});
-        // const thread = try std.Thread.spawn(
-        //     .{},
-        //     handle_connection,
-        //     .{ replica_stream, stdout, &state },
-        // );
-        // thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{ replica_stream, stdout, &state },
+        );
+        thread.detach();
     }
 
     while (true) {
