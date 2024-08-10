@@ -518,8 +518,6 @@ fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
     _ = try stream.write(resp);
 }
 
-fn handle_replconf(stream: net.Stream) !void {}
-
 fn handle_psync(
     allocator: std.mem.Allocator,
     stream: net.Stream,
