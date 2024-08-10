@@ -684,7 +684,6 @@ pub fn main() !void {
             if (args.next()) |mport| {
                 master_port = mport;
             }
-            std.debug.print("Replica starting... with master host/port {?}{?}", .{ master_host, port });
             state.role = .slave;
         } else {
             var master_replication_id: [40:0]u8 = undefined;
