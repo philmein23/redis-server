@@ -579,6 +579,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
     defer {
         if (close_stream) {
             stream.close();
+            std.debug.print("Closing connection....", .{});
         }
     }
 
@@ -641,8 +642,6 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
             },
         }
     }
-
-    std.debug.print("Closing connection....", .{});
 }
 
 pub fn main() !void {
