@@ -101,7 +101,7 @@ const RedisStore = struct {
 };
 
 const Parser = struct {
-    buffer: [:0]const u8,
+    buffer: []const u8,
     curr_index: usize,
 
     pub fn init(buffer: [:0]const u8) Parser {
@@ -599,7 +599,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
         const bytes_read = try reader.read(&buffer);
         if (bytes_read == 0) break;
 
-        var leaned_buffer: [:0]const u8 = undefined;
+        var leaned_buffer: []const u8 = undefined;
         var end: usize = 0;
 
         for (buffer) |ch| {
