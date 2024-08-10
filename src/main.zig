@@ -699,9 +699,6 @@ pub fn main() !void {
                 }
             }
 
-            std.debug.print("REPLICA FOUND MASTERHOST {s}", .{master_host.?});
-            std.debug.print("REPLICA FOUND MASTERPORT {s}", .{master_port.?});
-
             state.role = .slave;
         } else {
             var master_replication_id: [40:0]u8 = undefined;
@@ -729,7 +726,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     if (master_port != null) {
-        std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}", .{ master_host.?, master_port.? });
+        std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}\n", .{ master_host.?, master_port.? });
         const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
@@ -752,12 +749,12 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
 
         std.debug.print("Replica synchronized with master...", .{});
-        const thread = try std.Thread.spawn(
-            .{},
-            handle_connection,
-            .{ replica_stream, stdout, &state },
-        );
-        thread.detach();
+        // const thread = try std.Thread.spawn(
+        //     .{},
+        //     handle_connection,
+        //     .{ replica_stream, stdout, &state },
+        // );
+        // thread.detach();
     }
 
     while (true) {
