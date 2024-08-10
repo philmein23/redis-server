@@ -611,7 +611,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
         switch (command.tag) {
             Tag.echo => try handle_echo(stream, command.args[0]),
             Tag.ping => {
-                try stream.write("+PONG\r\n");
+                _ = try stream.write("+PONG\r\n");
             },
             Tag.set => {
                 if (opt != null) {
