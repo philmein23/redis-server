@@ -583,7 +583,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
         }
     }
 
-    var buffer: [1024:0]u8 = undefined;
+    var buffer: [100:0]u8 = undefined;
 
     const reader = stream.reader();
 
@@ -591,10 +591,27 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
+
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    while (try reader.read(&buffer) > 0) {
+    while (true) {
+        const bytes_read = try reader.read(&buffer);
+        if (bytes_read == 0) break;
+
+        var leaned_buffer: []const u8 = undefined;
+        var end: usize = 0;
+
+        for (buffer) |ch| {
+            if (std.ascii.isASCII(ch)) {
+                end += 1;
+            }
+        }
+
+        leaned_buffer = buffer[0..end];
+
+        std.debug.print("LEANED BUFFER: {s}", .{leaned_buffer});
+
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
