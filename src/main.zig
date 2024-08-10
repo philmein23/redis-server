@@ -614,9 +614,9 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                     try store.set(command.args[0].content, command.args[1].content, null);
                 }
 
+                const resp = "+OK\r\n";
+                _ = try stream.write(resp);
                 if (state.role == .master) {
-                    const resp = "+OK\r\n";
-                    _ = try stream.write(resp);
                     std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
                     try state.forward_cmd(&buffer);
                 }
