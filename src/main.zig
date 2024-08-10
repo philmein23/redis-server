@@ -728,6 +728,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     if (master_port != null) {
+        std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}", .{ master_host.?, master_port.? });
         const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
