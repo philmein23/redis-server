@@ -23,6 +23,7 @@ const Replica = struct {
 const ServerState = struct {
     replicas: [5]Replica,
     role: Role = .master,
+    replication_id: ?[40]u8 = null,
     replica_count: u8 = 0,
     nums: [5]u8 = undefined,
 
@@ -436,26 +437,27 @@ fn handle_echo(stream: net.Stream, arg: Arg) !void {
 
 fn handle_info(
     stream: net.Stream,
-    is_replica: bool,
-    master_replication_id: []u8,
+    state: *ServerState,
 ) !void {
     const terminator = "\r\n";
-    const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
+    const val = if (state.role != .master) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 
-    const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ master_replication_id, terminator });
-    defer allocator.free(replica_id_key_val);
+    if (state.replication_id) |rep_id| {
+        const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ rep_id, terminator });
+        defer allocator.free(replica_id_key_val);
 
-    const total_len = val.len + replica_id_key_val.len;
+        const total_len = val.len + replica_id_key_val.len;
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
-    defer allocator.free(resp);
+        const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
+        defer allocator.free(resp);
 
-    _ = try stream.write(resp);
+        _ = try stream.write(resp);
+    }
 }
 
 fn handle_set(
@@ -523,17 +525,18 @@ fn handle_replconf(stream: net.Stream) !void {
 fn handle_psync(
     allocator: std.mem.Allocator,
     stream: net.Stream,
-    replication_master_id: []u8,
+    state: *ServerState,
     args: []Arg,
 ) !void {
-    const resp = try std.fmt.allocPrint(
-        allocator,
-        "+FULLRESYNC {s} {s}\r\n",
-        .{ replication_master_id, args[1].content },
-    );
-    defer allocator.free(resp);
-
-    _ = try stream.write(resp);
+    if (state.replication_id) |rep_id| {
+        const resp = try std.fmt.allocPrint(
+            allocator,
+            "+FULLRESYNC {s} {s}\r\n",
+            .{ rep_id, args[1].content },
+        );
+        defer allocator.free(resp);
+        _ = try stream.write(resp);
+    }
 
     // const cwd = std.fs.cwd();
     // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
@@ -575,8 +578,8 @@ fn handle_psync(
     _ = try stream.write(rdb_resp);
 }
 
-fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, state: *ServerState) !void {
-    // defer stream.close();
+fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !void {
+    defer stream.close();
 
     var buffer: [1024:0]u8 = undefined;
 
@@ -588,17 +591,6 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
     const allocator = gpa.allocator();
     var store = RedisStore.init(allocator);
     defer store.deinit();
-
-    var master_replication_id: [40:0]u8 = undefined;
-    var i: usize = 0;
-    while (i < master_replication_id.len) {
-        const rand_int = rand.int(u8);
-
-        if (std.ascii.isAlphanumeric(rand_int)) {
-            master_replication_id[i] = rand_int;
-            i += 1;
-        }
-    }
 
     while (try reader.read(&buffer) > 0) {
         try stdout.print("Connection received, buffer being read into\n", .{});
@@ -630,15 +622,14 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
             Tag.get => try handle_get(stream, &store, command.args[0]),
             Tag.info => try handle_info(
                 stream,
-                is_replica,
-                &master_replication_id,
+                state,
             ),
             Tag.replconf => try handle_replconf(stream),
             Tag.psync => {
                 try handle_psync(
                     allocator,
                     stream,
-                    &master_replication_id,
+                    state,
                     &command.args,
                 );
 
@@ -657,7 +648,6 @@ pub fn main() !void {
 
     var port: u16 = 6379;
     var master_port: ?[]const u8 = null;
-    var is_replica = false;
 
     var state = ServerState.init();
     // testing
@@ -670,8 +660,6 @@ pub fn main() !void {
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            is_replica = true;
-
             while (args.next()) |a| {
                 var start: usize = 0;
                 var end: usize = 0;
@@ -691,6 +679,18 @@ pub fn main() !void {
                 master_port = a[start..];
                 state.role = .slave;
             }
+        } else {
+            var master_replication_id: [40:0]u8 = undefined;
+            var i: usize = 0;
+            while (i < master_replication_id.len) {
+                const rand_int = rand.int(u8);
+
+                if (std.ascii.isAlphanumeric(rand_int)) {
+                    master_replication_id[i] = rand_int;
+                    i += 1;
+                }
+            }
+            state.replication_id = master_replication_id;
         }
     }
 
@@ -704,7 +704,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    if (is_replica and master_port != null) {
+    if (master_port != null) {
         std.debug.print("IS REPLICA HERE", .{});
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
@@ -744,7 +744,7 @@ pub fn main() !void {
             try threads.append(try std.Thread.spawn(
                 .{},
                 handle_connection,
-                .{ client_connection.stream, stdout, is_replica, &state },
+                .{ client_connection.stream, stdout, &state },
             ));
         }
 
