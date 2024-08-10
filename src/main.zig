@@ -615,7 +615,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 if (state.role == .master) {
                     const resp = "+OK\r\n";
                     _ = try stream.write(resp);
-                    std.debug.print("SET FORWARD: {s}", .{&buffer});
+                    std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
                     try state.forward_cmd(&buffer);
                 }
             },
@@ -726,6 +726,7 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+        _ = try replica_stream.read(&buffer);
     }
 
     const allocator = gpa.allocator();
