@@ -38,7 +38,7 @@ const ServerState = struct {
     }
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
-        if (self.replicas.len == 0) return error.NoReplicasToForwardCmd;
+        if (self.replica_count == 0) return error.NoReplicasToForwardCmd;
 
         for (0..self.replica_count) |i| {
             try self.replicas[i].write(cmd_buf);
@@ -614,8 +614,6 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                     try store.set(command.args[0].content, command.args[1].content, null);
                 }
 
-                const resp = "+OK\r\n";
-                _ = try stream.write(resp);
                 if (state.role == .master) {
                     std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
                     try state.forward_cmd(&buffer);
