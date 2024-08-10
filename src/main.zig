@@ -6,7 +6,51 @@ const Loc = struct { start: usize, end: usize };
 const Tag = enum { echo, ping, set, get, info, replconf, psync };
 const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
 const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
+const Role = enum { master, slave };
 
+const Replica = struct {
+    stream: net.Stream,
+
+    pub fn init(stream: net.Stream) Replica {
+        return .{ .stream = stream };
+    }
+
+    pub fn write(self: *Replica, cmd_buf: []const u8) !void {
+        _ = try self.stream.write(cmd_buf);
+    }
+};
+
+const ServerState = struct {
+    replicas: [5]Replica,
+    role: Role = .master,
+    replication_id: ?[40]u8 = null,
+    replica_count: u8 = 0,
+    nums: [5]u8 = undefined,
+
+    // testing
+    pub fn add_num(self: *ServerState, num: u8) void {
+        std.debug.print("NUMS LENGTH: {}, NUM: {any}\n", .{ self.nums.len, self.nums });
+        self.nums[self.nums.len - 1] = num;
+    }
+
+    pub fn init() ServerState {
+        return .{ .replicas = undefined };
+    }
+
+    pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
+        if (self.replica_count == 0) return error.NoReplicasToForwardCmd;
+
+        for (0..self.replica_count) |i| {
+            try self.replicas[i].write(cmd_buf);
+        }
+    }
+
+    pub fn add_replica(self: *ServerState, stream: net.Stream) void {
+        self.replicas[self.replica_count] = Replica.init(stream);
+
+        self.replica_count += 1;
+    }
+};
 const RedisStore = struct {
     table: std.StringHashMap(RedisVal),
 
@@ -27,7 +71,7 @@ const RedisStore = struct {
         if (self.table.get(key)) |v| {
             if (v.expiry) |exp| {
                 const now = time.milliTimestamp();
-                if (now <= exp) {
+                if (now < exp) {
                     return v.val;
                 } else {
                     return error.KeyHasExceededExpirationThreshold;
@@ -39,14 +83,18 @@ const RedisStore = struct {
         }
     }
 
-    pub fn set(self: *RedisStore, key: []const u8, val: []const u8, exp: ?[]const u8) !void {
+    pub fn set(
+        self: *RedisStore,
+        key: []const u8,
+        val: []const u8,
+        exp: ?[]const u8,
+    ) !void {
         var rv = RedisVal{ .val = val };
         if (exp) |e| {
             const now = time.milliTimestamp();
             const parse_to_int = try std.fmt.parseInt(i64, e, 10);
 
             rv.expiry = now + parse_to_int;
-            std.debug.print("RedisStore SET - KEY: {s}, VAL: {s}, NOW: {any}, EXP: {any}, NEW_EXP: {any}\n", .{ key, val, now, parse_to_int, rv.expiry });
         }
         try self.table.put(key, rv);
     }
@@ -61,7 +109,6 @@ const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !Command {
-        std.debug.print("BUFFER LENGTH {}\n", .{self.buffer.len});
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         if (self.peek() == '*') {
@@ -134,8 +181,6 @@ const Parser = struct {
             Tag.ping => return command,
             Tag.echo, Tag.get => {
                 command.args[0] = try self.parse_string();
-                std.debug.print("Command.args[0] address: {*}, {*}\n", .{ &command.args[0], &command.args });
-                std.debug.print("Arg address (after returned): {*}, {*}\n", .{ &command.args[0], &command.args[0].loc });
                 return command;
             },
             Tag.set => {
@@ -178,6 +223,48 @@ const Parser = struct {
                 return command;
             },
             Tag.psync => {
+                if (self.peek() == '$') {
+                    self.next();
+                }
+
+                while (std.ascii.isDigit(self.peek())) {
+                    self.next();
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                var arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
+                if (self.peek() == '?') {
+                    self.next();
+
+                    arg.content = "?";
+                    command.args[0] = arg;
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                if (self.peek() == '$') {
+                    self.next();
+                }
+
+                while (std.ascii.isDigit(self.peek())) {
+                    self.next();
+                }
+
+                try self.expect_return_new_line_bytes();
+
+                var arg_two = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
+                if (self.peek() == '-') {
+                    self.next();
+                    if (self.peek() == '1') {
+                        self.next();
+                        arg_two.content = "0";
+
+                        command.args[1] = arg_two;
+                    }
+                }
+                try self.expect_return_new_line_bytes();
+
                 return command;
             },
         }
@@ -215,11 +302,7 @@ const Parser = struct {
                 }
             }
 
-            std.debug.print("Command ARG content {s}\n", .{self.buffer[arg.loc.start .. arg.loc.end + 1]});
-
             arg.content = self.buffer[arg.loc.start .. arg.loc.end + 1];
-
-            std.debug.print("Arg address (Before returned): {*}, {*}\n", .{ &arg, &arg.loc });
 
             return arg;
         } else {
@@ -247,6 +330,15 @@ const Parser = struct {
         }
     }
 };
+
+test "test PSYNC" {
+    const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    var parser = Parser.init(bytes);
+    const command = try parser.parse();
+    try std.testing.expectEqual(Tag.psync, command.tag);
+    try std.testing.expectEqualSlices(u8, "?", command.args[0].content);
+    try std.testing.expectEqualSlices(u8, "0", command.args[1].content);
+}
 
 test "test REPLCONF" {
     const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
@@ -292,7 +384,6 @@ test "test SET and GET command" {
 
     var parser = Parser.init(bytes);
     const command = try parser.parse();
-    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[0].content, command.args[1].content });
     try store.set(command.args[0].content, command.args[1].content, null);
     try std.testing.expectEqual(Tag.set, command.tag);
 
@@ -313,7 +404,6 @@ test "test parse PING command" {
     var parser = Parser.init(bytes);
     const command = try parser.parse();
 
-    std.debug.print("Command ARG content: {s}\n", .{command.args[0].content});
     try std.testing.expectEqual(Tag.ping, command.tag);
 }
 
@@ -330,7 +420,7 @@ test "test parse ECHO command" {
     try std.testing.expectEqualSlices(u8, exp, command.args[0].content);
 }
 
-fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
+fn handle_echo(stream: net.Stream, arg: Arg) !void {
     const terminator = "\r\n";
     const length = arg.content.len;
 
@@ -342,44 +432,41 @@ fn handle_echo(client_connection: net.Server.Connection, arg: Arg) !void {
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, arg.content, terminator });
     defer allocator.free(resp);
 
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 }
 
-fn handle_info(client_connection: net.Server.Connection, is_replica: bool) !void {
+fn handle_info(
+    stream: net.Stream,
+    state: *ServerState,
+) !void {
     const terminator = "\r\n";
-    const val = if (is_replica) "role:slave" else "role:master\r\nmaster_repl_offset:0";
+    const val = if (state.role != .master) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
-    var random_int_buffer: [40:0]u8 = undefined;
 
-    var i: usize = 0;
-    while (i < random_int_buffer.len) {
-        const rand_int = rand.int(u8);
+    if (state.replication_id) |rep_id| {
+        const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ rep_id, terminator });
+        defer allocator.free(replica_id_key_val);
 
-        if (std.ascii.isAlphanumeric(rand_int)) {
-            random_int_buffer[i] = rand_int;
-            i += 1;
-        }
+        const total_len = val.len + replica_id_key_val.len;
+
+        const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
+        defer allocator.free(resp);
+
+        _ = try stream.write(resp);
     }
-
-    const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ random_int_buffer, terminator });
-    defer allocator.free(replica_id_key_val);
-
-    const total_len = val.len + replica_id_key_val.len;
-
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}{s}", .{ total_len, terminator, val, terminator, replica_id_key_val });
-    defer allocator.free(resp);
-
-    _ = try client_connection.stream.writeAll(resp);
 }
 
-fn handle_ping(client_connection: net.Server.Connection) !void {
-    try client_connection.stream.writeAll("+PONG\r\n");
-}
-fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key: Arg, val: Arg, opt: ?Arg) !void {
+fn handle_set(
+    stream: net.Stream,
+    store: *RedisStore,
+    key: Arg,
+    val: Arg,
+    opt: ?Arg,
+) !void {
     if (opt != null) {
         try store.set(key.content, val.content, opt.?.content);
     } else {
@@ -387,12 +474,30 @@ fn handle_set(client_connection: net.Server.Connection, store: *RedisStore, key:
     }
 
     const resp = "+OK\r\n";
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
+
+    // const cwd = std.fs.cwd();
+    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
+    //
+    // var read_buf: [40]u8 = undefined;
+    //
+    // const file = try cwd.openFile("db.rdb", .{});
+    // defer file.close();
+    //
+    // var buf_reader = std.io.bufferedReader(file.reader());
+
+    //
+    // const num_bytes_read = try reader.read(&read_buf);
+    //
+    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+    //     read_buf,
+    //     num_bytes_read,
+    // });
 }
-fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key: Arg) !void {
+fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
     const val = store.get(key.content) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
-            try client_connection.stream.writeAll("$-1\r\n");
+            _ = try stream.write("$-1\r\n");
 
             return;
         },
@@ -410,22 +515,77 @@ fn handle_get(client_connection: net.Server.Connection, store: *RedisStore, key:
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
     defer allocator.free(resp);
 
-    _ = try client_connection.stream.writeAll(resp);
+    _ = try stream.write(resp);
 }
 
-fn handle_replconf(client_connection: net.Server.Connection) !void {
-    try client_connection.stream.writeAll("+OK\r\n");
+fn handle_psync(
+    allocator: std.mem.Allocator,
+    stream: net.Stream,
+    state: *ServerState,
+    args: []Arg,
+) !void {
+    if (state.replication_id) |rep_id| {
+        const resp = try std.fmt.allocPrint(
+            allocator,
+            "+FULLRESYNC {s} {s}\r\n",
+            .{ rep_id, args[1].content },
+        );
+        defer allocator.free(resp);
+        _ = try stream.write(resp);
+    }
+
+    // const cwd = std.fs.cwd();
+    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
+    //
+    // var read_buf: [40]u8 = undefined;
+    //
+    // const file = try cwd.openFile("db.rdb", .{});
+    // defer file.close();
+    //
+    // var buf_reader = std.io.bufferedReader(file.reader());
+    // const reader = buf_reader.reader();
+    //
+    // const num_bytes_read = try reader.read(&read_buf);
+    //
+    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+    //     read_buf,
+    //     num_bytes_read,
+    // });
+
+    const encoded_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
+    const Decoder = std.base64.standard.Decoder;
+
+    const decoded_length = try Decoder.calcSizeForSlice(encoded_empty_rdb);
+    const decoded_buffer = try allocator.alloc(u8, decoded_length);
+    defer allocator.free(decoded_buffer);
+
+    try Decoder.decode(decoded_buffer, encoded_empty_rdb);
+
+    const rdb_resp = try std.fmt.allocPrint(
+        allocator,
+        "${d}\r\n{s}",
+        .{ decoded_length, decoded_buffer },
+    );
+    std.debug.print("Decoded length: {d}, decoded buffer: {any}\n", .{
+        decoded_length,
+        decoded_buffer,
+    });
+    defer allocator.free(rdb_resp);
+    _ = try stream.write(rdb_resp);
 }
 
-fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, is_replica: bool) !void {
-    defer client_connection.stream.close();
-    std.debug.print("Tread client_connection address: {}\n", .{@intFromPtr(&client_connection)});
+fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !void {
+    var close_stream = true;
+    defer {
+        if (close_stream) {
+            stream.close();
+            std.debug.print("Closing connection....", .{});
+        }
+    }
 
     var buffer: [1024:0]u8 = undefined;
 
-    const reader = client_connection.stream.reader();
-
-    try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
+    const reader = stream.reader();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -435,20 +595,49 @@ fn handle_connection(client_connection: net.Server.Connection, stdout: anytype, 
     defer store.deinit();
 
     while (try reader.read(&buffer) > 0) {
+        try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
-        const command = try parser.parse();
+        var command = try parser.parse();
 
         const opt = command.opt orelse null;
 
         switch (command.tag) {
-            Tag.echo => try handle_echo(client_connection, command.args[0]),
-            Tag.ping => try handle_ping(client_connection),
-            Tag.set => try handle_set(client_connection, &store, command.args[0], command.args[1], opt),
-            Tag.get => try handle_get(client_connection, &store, command.args[0]),
-            Tag.info => try handle_info(client_connection, is_replica),
-            Tag.replconf => try handle_replconf(client_connection),
-            Tag.psync => break,
+            Tag.echo => try handle_echo(stream, command.args[0]),
+            Tag.ping => {
+                _ = try stream.write("+PONG\r\n");
+            },
+            Tag.set => {
+                if (opt != null) {
+                    try store.set(command.args[0].content, command.args[1].content, opt.?.content);
+                } else {
+                    try store.set(command.args[0].content, command.args[1].content, null);
+                }
+
+                if (state.role == .master) {
+                    std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
+                    try state.forward_cmd(&buffer);
+                }
+            },
+            Tag.get => try handle_get(stream, &store, command.args[0]),
+            Tag.info => try handle_info(
+                stream,
+                state,
+            ),
+            Tag.replconf => {
+                close_stream = false;
+                _ = try stream.write("+OK\r\n");
+            },
+            Tag.psync => {
+                try handle_psync(
+                    allocator,
+                    stream,
+                    state,
+                    &command.args,
+                );
+
+                state.add_replica(stream);
+            },
         }
     }
 }
@@ -460,7 +649,11 @@ pub fn main() !void {
 
     var port: u16 = 6379;
     var master_port: ?[]const u8 = null;
-    var is_replica = false;
+    var master_host: ?[]const u8 = null;
+
+    var state = ServerState.init();
+    // testing
+    state.add_num('c');
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
@@ -469,26 +662,42 @@ pub fn main() !void {
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            is_replica = true;
-
-            while (args.next()) |a| {
-                var start: usize = 0;
-                var end: usize = 0;
-                var addr: []const u8 = undefined;
-
-                for (a, 0..) |ch, idx| {
-                    if (ch == ' ') {
-                        addr = a[start..end];
-                        if (a[idx + 1] != ' ') {
-                            start = idx + 1;
-                        }
-                        break;
-                    }
-                    end += 1;
+            if (args.next()) |mhost| {
+                master_host = mhost;
+                if (std.ascii.eqlIgnoreCase(mhost, "localhost")) {
+                    master_host = "127.0.0.1";
                 }
-
-                master_port = a[start..];
             }
+            // var start: usize = 0;
+            // var end: usize = 0;
+
+            // for (a, 0..) |ch, idx| {
+            //     if (ch == ' ') {
+            //         if (a[idx + 1] != ' ') {
+            //             start = idx + 1;
+            //         }
+            //         break;
+            //     }
+            //     end += 1;
+            // }
+
+            // master_port = a[start..];
+            if (args.next()) |mport| {
+                master_port = mport;
+            }
+            state.role = .slave;
+        } else {
+            var master_replication_id: [40:0]u8 = undefined;
+            var i: usize = 0;
+            while (i < master_replication_id.len) {
+                const rand_int = rand.int(u8);
+
+                if (std.ascii.isAlphanumeric(rand_int)) {
+                    master_replication_id[i] = rand_int;
+                    i += 1;
+                }
+            }
+            state.replication_id = master_replication_id;
         }
     }
 
@@ -502,10 +711,9 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    if (is_replica and master_port != null) {
-        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
+    if (master_port != null) {
+        const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
-        defer replica_stream.close();
 
         var replica_writer = replica_stream.writer();
         const ping_resp = "*1\r\n$4\r\nPING\r\n";
@@ -520,29 +728,29 @@ pub fn main() !void {
 
         _ = try replica_stream.writer().write(resp);
 
-        buffer = undefined;
-
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+
+        std.debug.print("Replica synchronized with master...", .{});
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{ replica_stream, stdout, &state },
+        );
+        thread.detach();
     }
 
-    const allocator = gpa.allocator();
-
-    var threads = std.ArrayList(std.Thread).init(allocator);
-    defer threads.deinit();
-
-    const cpus = try std.Thread.getCpuCount();
-    try stdout.print("CPU core count {}\n", .{cpus});
-
     while (true) {
-        for (0..cpus) |_| {
-            const client_connection = try server.accept();
+        const client_connection = try server.accept();
+        try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
 
-            try threads.append(try std.Thread.spawn(.{}, handle_connection, .{ client_connection, stdout, is_replica }));
-        }
-
-        for (threads.items) |thread| thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{ client_connection.stream, stdout, &state },
+        );
+        thread.detach();
     }
 }
