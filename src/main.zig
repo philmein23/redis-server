@@ -576,7 +576,7 @@ fn handle_psync(
 }
 
 fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, state: *ServerState) !void {
-    defer stream.close();
+    // defer stream.close();
 
     var buffer: [1024:0]u8 = undefined;
 
