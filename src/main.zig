@@ -632,8 +632,8 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 }
 
                 if (state.role == .master) {
-                    std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
-                    try state.forward_cmd(&buffer);
+                    std.debug.print("\nSET FORWARD: {s}\n", .{leaned_buffer});
+                    try state.forward_cmd(leaned_buffer);
                 }
             },
             Tag.get => try handle_get(stream, &store, command.args[0]),
