@@ -630,6 +630,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 } else {
                     try store.set(command.args[0].content, command.args[1].content, null);
                 }
+                _ = try stream.write("+OK\r\n");
 
                 if (state.role == .master) {
                     std.debug.print("\nSET FORWARD: {s}\n", .{leaned_buffer});
