@@ -648,6 +648,7 @@ pub fn main() !void {
 
     var port: u16 = 6379;
     var master_port: ?[]const u8 = null;
+    var master_host: ?[]const u8 = null;
 
     var state = ServerState.init();
     // testing
@@ -660,25 +661,31 @@ pub fn main() !void {
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            while (args.next()) |a| {
-                var start: usize = 0;
-                var end: usize = 0;
-                var addr: []const u8 = undefined;
-
-                for (a, 0..) |ch, idx| {
-                    if (ch == ' ') {
-                        addr = a[start..end];
-                        if (a[idx + 1] != ' ') {
-                            start = idx + 1;
-                        }
-                        break;
-                    }
-                    end += 1;
+            if (args.next()) |mhost| {
+                master_host = mhost;
+                if (std.ascii.eqlIgnoreCase(mhost, "localhost")) {
+                    master_host = "127.0.0.1";
                 }
-
-                master_port = a[start..];
-                state.role = .slave;
             }
+            // var start: usize = 0;
+            // var end: usize = 0;
+
+            // for (a, 0..) |ch, idx| {
+            //     if (ch == ' ') {
+            //         if (a[idx + 1] != ' ') {
+            //             start = idx + 1;
+            //         }
+            //         break;
+            //     }
+            //     end += 1;
+            // }
+
+            // master_port = a[start..];
+            if (args.next()) |mport| {
+                master_port = mport;
+            }
+            std.debug.print("Replica starting... with master host/port {?}{?}", .{ master_host, port });
+            state.role = .slave;
         } else {
             var master_replication_id: [40:0]u8 = undefined;
             var i: usize = 0;
@@ -706,7 +713,7 @@ pub fn main() !void {
 
     if (master_port != null) {
         std.debug.print("IS REPLICA HERE", .{});
-        const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
+        const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
         var replica_writer = replica_stream.writer();
