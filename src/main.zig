@@ -610,8 +610,6 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
 
         leaned_buffer = buffer[0..end];
 
-        std.debug.print("LEANED BUFFER: {s}", .{leaned_buffer});
-
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
 
