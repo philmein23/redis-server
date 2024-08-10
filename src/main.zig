@@ -678,31 +678,30 @@ pub fn main() !void {
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            if (args.next()) |mhost| {
-                master_host = mhost;
-                std.debug.print("REPLICA FOUND MASTERHOST {s}", .{mhost});
-                if (std.ascii.eqlIgnoreCase(mhost, "localhost")) {
+            if (args.next()) |master_host_port| {
+                var start: usize = 0;
+                var end: usize = 0;
+
+                for (master_host_port, 0..) |ch, idx| {
+                    if (ch == ' ') {
+                        master_host = master_host_port[start..end];
+                        if (master_host_port[idx + 1] != ' ') {
+                            start = idx + 1;
+                        }
+                        break;
+                    }
+                    end += 1;
+                }
+
+                master_port = master_host_port[start..];
+                if (std.ascii.eqlIgnoreCase(master_host.?, "localhost")) {
                     master_host = "127.0.0.1";
                 }
             }
-            // var start: usize = 0;
-            // var end: usize = 0;
 
-            // for (a, 0..) |ch, idx| {
-            //     if (ch == ' ') {
-            //         if (a[idx + 1] != ' ') {
-            //             start = idx + 1;
-            //         }
-            //         break;
-            //     }
-            //     end += 1;
-            // }
+            std.debug.print("REPLICA FOUND MASTERHOST {s}", .{master_host.?});
+            std.debug.print("REPLICA FOUND MASTERPORT {s}", .{master_port.?});
 
-            // master_port = a[start..];
-            if (args.next()) |mport| {
-                std.debug.print("REPLICA FOUND MASTER PORT {s}", .{mport});
-                master_port = mport;
-            }
             state.role = .slave;
         } else {
             var master_replication_id: [40:0]u8 = undefined;
