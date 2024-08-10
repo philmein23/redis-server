@@ -458,9 +458,6 @@ fn handle_info(
     _ = try stream.write(resp);
 }
 
-fn handle_ping(stream: net.Stream) !void {
-    try stream.writeAll("+PONG\r\n");
-}
 fn handle_set(
     stream: net.Stream,
     store: *RedisStore,
@@ -613,7 +610,9 @@ fn handle_connection(stream: net.Stream, stdout: anytype, is_replica: bool, stat
 
         switch (command.tag) {
             Tag.echo => try handle_echo(stream, command.args[0]),
-            Tag.ping => try handle_ping(stream),
+            Tag.ping => {
+                try stream.write("+PONG\r\n");
+            },
             Tag.set => {
                 if (opt != null) {
                     try store.set(command.args[0].content, command.args[1].content, opt.?.content);
@@ -709,7 +708,6 @@ pub fn main() !void {
         std.debug.print("IS REPLICA HERE", .{});
         const master_address = try net.Address.resolveIp("127.0.0.1", try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
-        defer replica_stream.close();
 
         var replica_writer = replica_stream.writer();
         const ping_resp = "*1\r\n$4\r\nPING\r\n";
