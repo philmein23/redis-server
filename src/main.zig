@@ -680,6 +680,7 @@ pub fn main() !void {
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
             if (args.next()) |mhost| {
                 master_host = mhost;
+                std.debug.print("REPLICA FOUND MASTERHOST {s}", .{mhost});
                 if (std.ascii.eqlIgnoreCase(mhost, "localhost")) {
                     master_host = "127.0.0.1";
                 }
@@ -699,9 +700,9 @@ pub fn main() !void {
 
             // master_port = a[start..];
             if (args.next()) |mport| {
+                std.debug.print("REPLICA FOUND MASTER PORT {s}", .{mport});
                 master_port = mport;
             }
-            std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}", .{ master_host.?, master_port.? });
             state.role = .slave;
         } else {
             var master_replication_id: [40:0]u8 = undefined;
