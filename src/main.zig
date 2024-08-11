@@ -694,22 +694,23 @@ pub fn main() !void {
                 if (std.ascii.eqlIgnoreCase(master_host.?, "localhost")) {
                     master_host = "127.0.0.1";
                 }
+
+                var master_replication_id: [40:0]u8 = undefined;
+                var i: usize = 0;
+                while (i < master_replication_id.len) {
+                    const rand_int = rand.int(u8);
+
+                    if (std.ascii.isAlphanumeric(rand_int)) {
+                        master_replication_id[i] = rand_int;
+                        i += 1;
+                    }
+                }
+                state.replication_id = master_replication_id;
             }
 
             state.role = .slave;
         }
     }
-    var master_replication_id: [40:0]u8 = undefined;
-    var i: usize = 0;
-    while (i < master_replication_id.len) {
-        const rand_int = rand.int(u8);
-
-        if (std.ascii.isAlphanumeric(rand_int)) {
-            master_replication_id[i] = rand_int;
-            i += 1;
-        }
-    }
-    state.replication_id = master_replication_id;
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
 
