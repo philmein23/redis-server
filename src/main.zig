@@ -591,6 +591,8 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
+    var bytes = std.ArrayList(u8).init(allocator);
+    defer bytes.deinit();
 
     var store = RedisStore.init(allocator);
     defer store.deinit();
@@ -599,21 +601,13 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
         const bytes_read = try reader.read(&buffer);
         if (bytes_read == 0) break;
 
-        var leaned_buffer: [:0]const u8 = undefined;
-        var end: usize = 0;
+        try bytes.appendSlice(buffer[0..bytes_read]);
+        const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        for (buffer) |ch| {
-            if (std.ascii.isASCII(ch)) {
-                end += 1;
-            }
-        }
-
-        leaned_buffer = buffer[0..end :0];
-
-        std.debug.print("LEANED BUFFER: {s}", .{leaned_buffer});
+        std.debug.print("LEANED BUFFER: {s}", .{bytes_slice});
 
         try stdout.print("Connection received, buffer being read into\n", .{});
-        var parser = Parser{ .buffer = leaned_buffer, .curr_index = 0 };
+        var parser = Parser{ .buffer = bytes_slice, .curr_index = 0 };
 
         var command = try parser.parse();
 
@@ -633,8 +627,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 _ = try stream.write("+OK\r\n");
 
                 if (state.role == .master) {
-                    std.debug.print("\nSET FORWARD: {s}\n", .{leaned_buffer});
-                    try state.forward_cmd(leaned_buffer);
+                    try state.forward_cmd(bytes_slice);
                 }
             },
             Tag.get => try handle_get(stream, &store, command.args[0]),
