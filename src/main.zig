@@ -25,21 +25,12 @@ const ServerState = struct {
     role: Role = .master,
     replication_id: ?[40]u8 = null,
     replica_count: u8 = 0,
-    nums: [5]u8 = undefined,
-
-    // testing
-    pub fn add_num(self: *ServerState, num: u8) void {
-        std.debug.print("NUMS LENGTH: {}, NUM: {any}\n", .{ self.nums.len, self.nums });
-        self.nums[self.nums.len - 1] = num;
-    }
 
     pub fn init() ServerState {
         return .{ .replicas = undefined };
     }
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
-        if (self.replica_count == 0) return error.NoReplicasToForwardCmd;
-
         for (0..self.replica_count) |i| {
             try self.replicas[i].write(cmd_buf);
         }
