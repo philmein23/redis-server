@@ -447,7 +447,9 @@ fn handle_info(
 
     const allocator = gpa.allocator();
 
+    std.debug.print("INFO - STATE REP", .{});
     if (state.replication_id) |rep_id| {
+        std.debug.print("INFO - STATE REP: {any}", .{state.replication_id.?});
         const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ rep_id, terminator });
         defer allocator.free(replica_id_key_val);
 
