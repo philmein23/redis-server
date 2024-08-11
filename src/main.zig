@@ -91,6 +91,26 @@ const RedisStore = struct {
     }
 };
 
+fn sync_rdb_with_master() !void {
+    const cwd = std.fs.cwd();
+    try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
+
+    var read_buf: [40]u8 = undefined;
+
+    const file = try cwd.openFile("db.rdb", .{});
+    defer file.close();
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    const reader = buf_reader.reader();
+
+    const num_bytes_read = try reader.read(&read_buf);
+
+    std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
+        read_buf,
+        num_bytes_read,
+    });
+}
+
 const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
@@ -411,32 +431,13 @@ test "test parse ECHO command" {
     try std.testing.expectEqualSlices(u8, exp, command.args[0].content);
 }
 
-fn handle_echo(stream: net.Stream, arg: Arg) !void {
-    const terminator = "\r\n";
-    const length = arg.content.len;
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
-
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, arg.content, terminator });
-    defer allocator.free(resp);
-
-    _ = try stream.write(resp);
-}
-
 fn handle_info(
     stream: net.Stream,
+    allocator: std.mem.Allocator,
     state: *ServerState,
 ) !void {
     const terminator = "\r\n";
     const val = if (state.role != .master) "role:slave" else "role:master\r\nmaster_repl_offset:0";
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
 
     std.debug.print("INFO - STATE REP", .{});
     if (state.replication_id) |rep_id| {
@@ -453,41 +454,12 @@ fn handle_info(
     }
 }
 
-fn handle_set(
+fn handle_get(
     stream: net.Stream,
+    allocator: std.mem.Allocator,
     store: *RedisStore,
     key: Arg,
-    val: Arg,
-    opt: ?Arg,
 ) !void {
-    if (opt != null) {
-        try store.set(key.content, val.content, opt.?.content);
-    } else {
-        try store.set(key.content, val.content, null);
-    }
-
-    const resp = "+OK\r\n";
-    _ = try stream.write(resp);
-
-    // const cwd = std.fs.cwd();
-    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
-    //
-    // var read_buf: [40]u8 = undefined;
-    //
-    // const file = try cwd.openFile("db.rdb", .{});
-    // defer file.close();
-    //
-    // var buf_reader = std.io.bufferedReader(file.reader());
-
-    //
-    // const num_bytes_read = try reader.read(&read_buf);
-    //
-    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
-    //     read_buf,
-    //     num_bytes_read,
-    // });
-}
-fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
     const val = store.get(key.content) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
             _ = try stream.write("$-1\r\n");
@@ -499,11 +471,6 @@ fn handle_get(stream: net.Stream, store: *RedisStore, key: Arg) !void {
 
     const terminator = "\r\n";
     const length = val.len;
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
 
     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
     defer allocator.free(resp);
@@ -527,24 +494,6 @@ fn handle_psync(
         _ = try stream.write(resp);
     }
 
-    // const cwd = std.fs.cwd();
-    // try cwd.writeFile2(.{ .sub_path = "db.rdb", .data = "test\r\nyoyoyo" });
-    //
-    // var read_buf: [40]u8 = undefined;
-    //
-    // const file = try cwd.openFile("db.rdb", .{});
-    // defer file.close();
-    //
-    // var buf_reader = std.io.bufferedReader(file.reader());
-    // const reader = buf_reader.reader();
-    //
-    // const num_bytes_read = try reader.read(&read_buf);
-    //
-    // std.debug.print("Buffer read: {any}, num_bytes_read: {any}\n", .{
-    //     read_buf,
-    //     num_bytes_read,
-    // });
-
     const encoded_empty_rdb = "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog==";
     const Decoder = std.base64.standard.Decoder;
 
@@ -567,7 +516,13 @@ fn handle_psync(
     _ = try stream.write(rdb_resp);
 }
 
-fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !void {
+fn handle_connection(
+    stream: net.Stream,
+    stdout: anytype,
+    allocator: std.mem.Allocator,
+    state: *ServerState,
+    store: *RedisStore,
+) !void {
     var close_stream = true;
     defer {
         if (close_stream) {
@@ -577,18 +532,14 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
     }
 
     var buffer: [100:0]u8 = undefined;
-
     const reader = stream.reader();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-
-    const allocator = gpa.allocator();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer _ = gpa.deinit(); // commmenting this out resolves gpa memory leak issue -- still trying to understand why
+    // const allocator = gpa.allocator();
+    //
     var bytes = std.ArrayList(u8).init(allocator);
     defer bytes.deinit();
-
-    var store = RedisStore.init(allocator);
-    defer store.deinit();
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
@@ -600,32 +551,48 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
         std.debug.print("LEANED BUFFER: {s}", .{bytes_slice});
 
         try stdout.print("Connection received, buffer being read into\n", .{});
-        var parser = Parser{ .buffer = bytes_slice, .curr_index = 0 };
-
+        var parser = Parser.init(bytes_slice);
         var command = try parser.parse();
 
         const opt = command.opt orelse null;
 
         switch (command.tag) {
-            Tag.echo => try handle_echo(stream, command.args[0]),
+            Tag.echo => {
+                const echo_arg = command.args[0].content;
+                const terminator = "\r\n";
+                const length = echo_arg.len;
+
+                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, echo_arg, terminator });
+                defer allocator.free(resp);
+
+                _ = try stream.write(resp);
+            },
             Tag.ping => {
                 _ = try stream.write("+PONG\r\n");
             },
             Tag.set => {
                 if (opt != null) {
                     try store.set(command.args[0].content, command.args[1].content, opt.?.content);
+                    std.debug.print("SET KEY - NO OPT {s} VAL {s}\n", .{ command.args[0].content, command.args[1].content });
                 } else {
                     try store.set(command.args[0].content, command.args[1].content, null);
+                    std.debug.print("SET KEY {s} VAL {s}\n", .{ command.args[0].content, command.args[1].content });
                 }
-                _ = try stream.write("+OK\r\n");
 
                 if (state.role == .master) {
+                    _ = try stream.write("+OK\r\n");
                     try state.forward_cmd(bytes_slice);
                 }
             },
-            Tag.get => try handle_get(stream, &store, command.args[0]),
+            Tag.get => try handle_get(
+                stream,
+                allocator,
+                store,
+                command.args[0],
+            ),
             Tag.info => try handle_info(
                 stream,
+                allocator,
                 state,
             ),
             Tag.replconf => {
@@ -710,6 +677,10 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var store = RedisStore.init(allocator);
+    defer store.deinit();
 
     if (master_port != null) {
         std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}\n", .{ master_host.?, master_port.? });
@@ -723,7 +694,6 @@ pub fn main() !void {
         var buffer: [1024:0]u8 = undefined;
         _ = try replica_stream.read(&buffer); // master responds w/ +PONG
 
-        const allocator = gpa.allocator();
         const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
         defer allocator.free(resp);
 
@@ -740,7 +710,13 @@ pub fn main() !void {
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
-            .{ replica_stream, stdout, &state },
+            .{
+                replica_stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
         );
         thread.detach();
     }
@@ -752,7 +728,13 @@ pub fn main() !void {
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
-            .{ client_connection.stream, stdout, &state },
+            .{
+                client_connection.stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
         );
         thread.detach();
     }
