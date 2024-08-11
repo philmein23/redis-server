@@ -25,21 +25,12 @@ const ServerState = struct {
     role: Role = .master,
     replication_id: ?[40]u8 = null,
     replica_count: u8 = 0,
-    nums: [5]u8 = undefined,
-
-    // testing
-    pub fn add_num(self: *ServerState, num: u8) void {
-        std.debug.print("NUMS LENGTH: {}, NUM: {any}\n", .{ self.nums.len, self.nums });
-        self.nums[self.nums.len - 1] = num;
-    }
 
     pub fn init() ServerState {
         return .{ .replicas = undefined };
     }
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
-        if (self.replica_count == 0) return error.NoReplicasToForwardCmd;
-
         for (0..self.replica_count) |i| {
             try self.replicas[i].write(cmd_buf);
         }
@@ -447,7 +438,9 @@ fn handle_info(
 
     const allocator = gpa.allocator();
 
+    std.debug.print("INFO - STATE REP", .{});
     if (state.replication_id) |rep_id| {
+        std.debug.print("INFO - STATE REP: {any}", .{state.replication_id.?});
         const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ rep_id, terminator });
         defer allocator.free(replica_id_key_val);
 
@@ -583,7 +576,7 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
         }
     }
 
-    var buffer: [1024:0]u8 = undefined;
+    var buffer: [100:0]u8 = undefined;
 
     const reader = stream.reader();
 
@@ -591,12 +584,23 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
+    var bytes = std.ArrayList(u8).init(allocator);
+    defer bytes.deinit();
+
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    while (try reader.read(&buffer) > 0) {
+    while (true) {
+        const bytes_read = try reader.read(&buffer);
+        if (bytes_read == 0) break;
+
+        try bytes.appendSlice(buffer[0..bytes_read]);
+        const bytes_slice = try bytes.toOwnedSliceSentinel(0);
+
+        std.debug.print("LEANED BUFFER: {s}", .{bytes_slice});
+
         try stdout.print("Connection received, buffer being read into\n", .{});
-        var parser = Parser{ .buffer = &buffer, .curr_index = 0 };
+        var parser = Parser{ .buffer = bytes_slice, .curr_index = 0 };
 
         var command = try parser.parse();
 
@@ -613,10 +617,10 @@ fn handle_connection(stream: net.Stream, stdout: anytype, state: *ServerState) !
                 } else {
                     try store.set(command.args[0].content, command.args[1].content, null);
                 }
+                _ = try stream.write("+OK\r\n");
 
                 if (state.role == .master) {
-                    std.debug.print("\nSET FORWARD: {s}\n", .{&buffer});
-                    try state.forward_cmd(&buffer);
+                    try state.forward_cmd(bytes_slice);
                 }
             },
             Tag.get => try handle_get(stream, &store, command.args[0]),
@@ -652,8 +656,7 @@ pub fn main() !void {
     var master_host: ?[]const u8 = null;
 
     var state = ServerState.init();
-    // testing
-    state.add_num('c');
+
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
@@ -662,44 +665,41 @@ pub fn main() !void {
         }
 
         if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            if (args.next()) |mhost| {
-                master_host = mhost;
-                if (std.ascii.eqlIgnoreCase(mhost, "localhost")) {
+            if (args.next()) |master_host_port| {
+                var start: usize = 0;
+                var end: usize = 0;
+
+                for (master_host_port, 0..) |ch, idx| {
+                    if (ch == ' ') {
+                        master_host = master_host_port[start..end];
+                        if (master_host_port[idx + 1] != ' ') {
+                            start = idx + 1;
+                        }
+                        break;
+                    }
+                    end += 1;
+                }
+
+                master_port = master_host_port[start..];
+                if (std.ascii.eqlIgnoreCase(master_host.?, "localhost")) {
                     master_host = "127.0.0.1";
                 }
             }
-            // var start: usize = 0;
-            // var end: usize = 0;
 
-            // for (a, 0..) |ch, idx| {
-            //     if (ch == ' ') {
-            //         if (a[idx + 1] != ' ') {
-            //             start = idx + 1;
-            //         }
-            //         break;
-            //     }
-            //     end += 1;
-            // }
-
-            // master_port = a[start..];
-            if (args.next()) |mport| {
-                master_port = mport;
-            }
             state.role = .slave;
-        } else {
-            var master_replication_id: [40:0]u8 = undefined;
-            var i: usize = 0;
-            while (i < master_replication_id.len) {
-                const rand_int = rand.int(u8);
-
-                if (std.ascii.isAlphanumeric(rand_int)) {
-                    master_replication_id[i] = rand_int;
-                    i += 1;
-                }
-            }
-            state.replication_id = master_replication_id;
         }
     }
+    var master_replication_id: [40:0]u8 = undefined;
+    var i: usize = 0;
+    while (i < master_replication_id.len) {
+        const rand_int = rand.int(u8);
+
+        if (std.ascii.isAlphanumeric(rand_int)) {
+            master_replication_id[i] = rand_int;
+            i += 1;
+        }
+    }
+    state.replication_id = master_replication_id;
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
 
@@ -712,6 +712,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     if (master_port != null) {
+        std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}\n", .{ master_host.?, master_port.? });
         const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
@@ -732,8 +733,10 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+        _ = try replica_stream.read(&buffer);
+        _ = try replica_stream.read(&buffer);
 
-        std.debug.print("Replica synchronized with master...", .{});
+        std.debug.print("Replica synchronized with master...\n", .{});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
