@@ -656,8 +656,7 @@ pub fn main() !void {
     var master_host: ?[]const u8 = null;
 
     var state = ServerState.init();
-    // testing
-    state.add_num('c');
+
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
