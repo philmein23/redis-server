@@ -699,19 +699,17 @@ pub fn main() !void {
             state.role = .slave;
         }
     }
-    if (state.role == .master) {
-        var master_replication_id: [40:0]u8 = undefined;
-        var i: usize = 0;
-        while (i < master_replication_id.len) {
-            const rand_int = rand.int(u8);
+    var master_replication_id: [40:0]u8 = undefined;
+    var i: usize = 0;
+    while (i < master_replication_id.len) {
+        const rand_int = rand.int(u8);
 
-            if (std.ascii.isAlphanumeric(rand_int)) {
-                master_replication_id[i] = rand_int;
-                i += 1;
-            }
+        if (std.ascii.isAlphanumeric(rand_int)) {
+            master_replication_id[i] = rand_int;
+            i += 1;
         }
-        state.replication_id = master_replication_id;
     }
+    state.replication_id = master_replication_id;
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
 
