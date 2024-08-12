@@ -25,6 +25,8 @@ const ServerState = struct {
     role: Role = .master,
     replication_id: ?[]u8 = null,
     replica_count: u8 = 0,
+    master_host: ?[]const u8 = null,
+    master_port: ?u16 = null,
 
     pub fn init() ServerState {
         return .{ .replicas = undefined };
@@ -616,8 +618,6 @@ pub fn main() !void {
     _ = args.skip();
 
     var port: u16 = 6379;
-    var master_port: ?[]const u8 = null;
-    var master_host: ?[]const u8 = null;
 
     var state = ServerState.init();
 
@@ -635,7 +635,7 @@ pub fn main() !void {
 
                 for (master_host_port, 0..) |ch, idx| {
                     if (ch == ' ') {
-                        master_host = master_host_port[start..end];
+                        state.master_host = master_host_port[start..end];
                         if (master_host_port[idx + 1] != ' ') {
                             start = idx + 1;
                         }
@@ -644,9 +644,9 @@ pub fn main() !void {
                     end += 1;
                 }
 
-                master_port = master_host_port[start..];
-                if (std.ascii.eqlIgnoreCase(master_host.?, "localhost")) {
-                    master_host = "127.0.0.1";
+                state.master_port = try std.fmt.parseInt(u16, master_host_port[start..], 10);
+                if (std.ascii.eqlIgnoreCase(state.master_host.?, "localhost")) {
+                    state.master_host = "127.0.0.1";
                 }
             }
 
@@ -666,8 +666,6 @@ pub fn main() !void {
             }
         }
         state.replication_id = &master_replication_id;
-
-        std.debug.print("MASTER - SET REPLID {?s}", .{state.replication_id});
     }
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
@@ -684,9 +682,8 @@ pub fn main() !void {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    if (master_port != null) {
-        std.debug.print("REPLICA MASTERHOST {s}, MASTER PORT {s}\n", .{ master_host.?, master_port.? });
-        const master_address = try net.Address.resolveIp(master_host.?, try std.fmt.parseInt(u16, master_port.?, 10));
+    if (state.master_port != null) {
+        const master_address = try net.Address.resolveIp(state.master_host.?, state.master_port.?);
         const replica_stream = try net.tcpConnectToAddress(master_address);
 
         var replica_writer = replica_stream.writer();
@@ -731,6 +728,8 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
 
         std.debug.print("Replica synchronized with master...\n", .{});
+
+        // Commenting out for now - not sure why I would need this (at this point in time)
         // const thread = try std.Thread.spawn(
         //     .{},
         //     handle_connection,
