@@ -727,10 +727,13 @@ pub fn main() !void {
         state.replication_id = rep_id;
 
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
-        _ = try replica_stream.read(&buffer); // reads empty RDB file from master
-        std.debug.print("Propagated cmds? {s}\n", .{&buffer});
 
         std.debug.print("Replica synchronized with master...\n", .{});
+        while (true) {
+            const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
+            if (br == 0) break;
+            std.debug.print("Propagated cmds? {s}\n", .{&buffer});
+        }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
         // const thread = try std.Thread.spawn(
