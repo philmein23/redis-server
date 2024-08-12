@@ -23,7 +23,7 @@ const Replica = struct {
 const ServerState = struct {
     replicas: [5]Replica,
     role: Role = .master,
-    replication_id: ?[40]u8 = null,
+    replication_id: ?[]u8 = null,
     replica_count: u8 = 0,
 
     pub fn init() ServerState {
@@ -665,7 +665,7 @@ pub fn main() !void {
                 i += 1;
             }
         }
-        state.replication_id = master_replication_id;
+        state.replication_id = &master_replication_id;
 
         std.debug.print("MASTER - SET REPLID {?s}", .{state.replication_id});
     }
@@ -705,22 +705,46 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-        _ = try replica_stream.read(&buffer); // reads FULLSYNC response from master
+        const bytes_read = try replica_stream.read(&buffer); // reads FULLSYNC response from master
+        var start: usize = 0;
+        var end: usize = 0;
+
+        for (buffer, 0..) |ch, i| {
+            if (ch == ' ') {
+                start = i + 1;
+                break;
+            }
+        }
+
+        const buffer_two = buffer[start..bytes_read];
+
+        for (buffer_two, 0..) |ch, i| {
+            if (ch == ' ') {
+                end = i - 1;
+                break;
+            }
+        }
+
+        const rep_id = buffer_two[0..end];
+
+        state.replication_id = rep_id;
+        std.debug.print("Replica - REPID {s}\n", .{rep_id});
+
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
 
         std.debug.print("Replica synchronized with master...\n", .{});
-        // const thread = try std.Thread.spawn(
-        //     .{},
-        //     handle_connection,
-        //     .{
-        //         replica_stream,
-        //         stdout,
-        //         allocator,
-        //         &state,
-        //         &store,
-        //     },
-        // );
-        // thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{
+                replica_stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
+        );
+        thread.detach();
     }
 
     while (true) {
