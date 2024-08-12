@@ -439,9 +439,7 @@ fn handle_info(
     const terminator = "\r\n";
     const val = if (state.role != .master) "role:slave" else "role:master\r\nmaster_repl_offset:0";
 
-    std.debug.print("INFO - STATE REP", .{});
     if (state.replication_id) |rep_id| {
-        std.debug.print("INFO - STATE REP: {any}", .{state.replication_id.?});
         const replica_id_key_val = try std.fmt.allocPrint(allocator, "master_replid:{s}{s}", .{ rep_id, terminator });
         defer allocator.free(replica_id_key_val);
 
@@ -573,10 +571,8 @@ fn handle_connection(
             Tag.set => {
                 if (opt != null) {
                     try store.set(command.args[0].content, command.args[1].content, opt.?.content);
-                    std.debug.print("SET KEY - NO OPT {s} VAL {s}\n", .{ command.args[0].content, command.args[1].content });
                 } else {
                     try store.set(command.args[0].content, command.args[1].content, null);
-                    std.debug.print("SET KEY {s} VAL {s}\n", .{ command.args[0].content, command.args[1].content });
                 }
 
                 if (state.role == .master) {
@@ -656,17 +652,22 @@ pub fn main() !void {
             state.role = .slave;
         }
     }
-    var master_replication_id: [40:0]u8 = undefined;
-    var i: usize = 0;
-    while (i < master_replication_id.len) {
-        const rand_int = rand.int(u8);
 
-        if (std.ascii.isAlphanumeric(rand_int)) {
-            master_replication_id[i] = rand_int;
-            i += 1;
+    if (state.role == .master) {
+        var master_replication_id: [40:0]u8 = undefined;
+        var i: usize = 0;
+        while (i < master_replication_id.len) {
+            const rand_int = rand.int(u8);
+
+            if (std.ascii.isAlphanumeric(rand_int)) {
+                master_replication_id[i] = rand_int;
+                i += 1;
+            }
         }
+        state.replication_id = master_replication_id;
+
+        std.debug.print("MASTER - SET REPLID {?s}", .{state.replication_id});
     }
-    state.replication_id = master_replication_id;
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
 
