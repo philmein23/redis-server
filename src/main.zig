@@ -541,6 +541,7 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
+        std.debug.print("HANDLE CONNECTION - ROLE: {any} BYTES_READ {}\n", .{ state.role, bytes_read });
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
@@ -708,18 +709,18 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
 
         std.debug.print("Replica synchronized with master...\n", .{});
-        const thread = try std.Thread.spawn(
-            .{},
-            handle_connection,
-            .{
-                replica_stream,
-                stdout,
-                allocator,
-                &state,
-                &store,
-            },
-        );
-        thread.detach();
+        // const thread = try std.Thread.spawn(
+        //     .{},
+        //     handle_connection,
+        //     .{
+        //         replica_stream,
+        //         stdout,
+        //         allocator,
+        //         &state,
+        //         &store,
+        //     },
+        // );
+        // thread.detach();
     }
 
     while (true) {
