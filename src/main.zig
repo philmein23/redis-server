@@ -728,11 +728,10 @@ pub fn main() !void {
 
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
 
-        std.debug.print("Replica synchronized with master...\n", .{});
         while (true) {
             const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
             if (br == 0) break;
-            std.debug.print("Propagated cmds? {s}\n", .{&buffer});
+            std.debug.print("Propagated cmds? {any}\n", .{&buffer});
         }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
