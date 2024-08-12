@@ -34,6 +34,7 @@ const ServerState = struct {
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
         for (0..self.replica_count) |i| {
+            std.debug.print("FORWARDING CMD: {s}", .{cmd_buf});
             try self.replicas[i].write(cmd_buf);
         }
     }
@@ -730,18 +731,18 @@ pub fn main() !void {
         std.debug.print("Replica synchronized with master...\n", .{});
 
         // Commenting out for now - not sure why I would need this (at this point in time)
-        // const thread = try std.Thread.spawn(
-        //     .{},
-        //     handle_connection,
-        //     .{
-        //         replica_stream,
-        //         stdout,
-        //         allocator,
-        //         &state,
-        //         &store,
-        //     },
-        // );
-        // thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{
+                replica_stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
+        );
+        thread.detach();
     }
 
     while (true) {
