@@ -706,29 +706,27 @@ pub fn main() !void {
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
         const bytes_read = try replica_stream.read(&buffer); // reads FULLSYNC response from master
-        var start: usize = 0;
-        var end: usize = 0;
+        var bound: usize = 0;
 
         for (buffer, 0..) |ch, i| {
             if (ch == ' ') {
-                start = i + 1;
+                bound = i + 1;
                 break;
             }
         }
 
-        const buffer_two = buffer[start..bytes_read];
+        const buffer_two = buffer[bound..bytes_read];
 
         for (buffer_two, 0..) |ch, i| {
             if (ch == ' ') {
-                end = i - 1;
+                bound = i - 1;
                 break;
             }
         }
 
-        const rep_id = buffer_two[0..end];
+        const rep_id = buffer_two[0..bound];
 
         state.replication_id = rep_id;
-        std.debug.print("Replica - REPID {s}\n", .{rep_id});
 
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
 
