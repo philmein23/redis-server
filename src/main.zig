@@ -728,7 +728,7 @@ pub fn main() !void {
 
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
         _ = try replica_stream.read(&buffer); // reads empty RDB file from master
-        std.debug.print("Propagated cmds? {s}", .{buffer});
+        std.debug.print("Propagated cmds? {s}\n", .{&buffer});
 
         std.debug.print("Replica synchronized with master...\n", .{});
 
