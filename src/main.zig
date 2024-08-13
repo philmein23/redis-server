@@ -734,7 +734,7 @@ pub fn main() !void {
             if (br == 0) break;
             const cmd = buffer[bytes_read..];
 
-            std.debug.print("Propagated cmds? {}\n", .{cmd});
+            std.debug.print("Propagated cmds? {s}\n", .{cmd});
         }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
