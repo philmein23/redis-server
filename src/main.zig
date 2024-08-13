@@ -122,9 +122,9 @@ fn handle_connection(
 ) !void {
     var close_stream = true;
     var rwl: std.Thread.RwLock = .{};
-    rwl.lockShared();
+    rwl.lock();
     defer {
-        rwl.unlockShared();
+        rwl.unlock();
         if (close_stream) {
             stream.close();
             std.debug.print("Closing connection....", .{});
