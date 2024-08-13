@@ -733,9 +733,9 @@ pub fn main() !void {
         while (true) {
             const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
             if (br == 0) break;
-            const cmd = buffer[bytes_read..];
+            // const cmd = buffer[bytes_read..];
 
-            std.debug.print("Propagated cmds? {s}\n", .{cmd});
+            std.debug.print("Propagated cmds? {s}\n", .{&buffer});
         }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
