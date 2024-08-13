@@ -8,6 +8,7 @@ const Tag = @import("type.zig").Tag;
 const ServerState = @import("type.zig").ServerState;
 const RedisStore = @import("store.zig").RedisStore;
 const Parser = @import("parser.zig").Parser;
+const rwLock = std.Thread.RwLock;
 
 fn sync_rdb_with_master() !void {
     const cwd = std.fs.cwd();
@@ -120,7 +121,10 @@ fn handle_connection(
     store: *RedisStore,
 ) !void {
     var close_stream = true;
+    var rwl: std.Thread.RwLock = .{};
+    rwl.lock();
     defer {
+        rwl.unlock();
         if (close_stream) {
             stream.close();
             std.debug.print("Closing connection....", .{});
