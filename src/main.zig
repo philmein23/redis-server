@@ -121,11 +121,8 @@ fn handle_connection(
     store: *RedisStore,
 ) !void {
     var close_stream = true;
-    var rwl: std.Thread.RwLock = .{};
-    const is_locked = rwl.tryLock();
-    std.debug.print("Server {any} thread is locked {}", .{ state.role, is_locked });
+
     defer {
-        rwl.unlock();
         if (close_stream) {
             stream.close();
             std.debug.print("Closing connection....", .{});
@@ -144,14 +141,18 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
+        var rwl: std.Thread.RwLock = .{};
+        const is_locked = rwl.tryLock();
+        defer rwl.unlock();
+        std.debug.print("Server {any} thread is locked {}\n", .{ state.role, is_locked });
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print(
-            "COMMANDS:{s}, SERVER ROLE:{any}\n",
-            .{ bytes_slice, state.role },
+            "COMMANDS:{s}\n",
+            .{bytes_slice},
         );
 
         try stdout.print("Connection received, buffer being read into\n", .{});
@@ -166,7 +167,12 @@ fn handle_connection(
                 const terminator = "\r\n";
                 const length = echo_arg.len;
 
-                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, echo_arg, terminator });
+                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
+                    length,
+                    terminator,
+                    echo_arg,
+                    terminator,
+                });
                 defer allocator.free(resp);
 
                 _ = try stream.write(resp);
