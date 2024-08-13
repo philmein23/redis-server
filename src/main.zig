@@ -728,6 +728,7 @@ pub fn main() !void {
 
         const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
+        std.debug.print("RDB Bytes read {s}\n", .{&buffer});
 
         while (true) {
             const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
