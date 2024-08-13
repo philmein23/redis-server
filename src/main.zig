@@ -550,7 +550,7 @@ fn handle_connection(
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print(
-            "COMMANDS:{s}, SERVER ROLE:{any}",
+            "COMMANDS:{s}, SERVER ROLE:{any}\n",
             .{ bytes_slice, state.role },
         );
 
@@ -729,21 +729,7 @@ pub fn main() !void {
 
         const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
-        std.debug.print("RDB Bytes read {s}\n", .{&buffer});
 
-        // var bytes = std.ArrayList(u8).init(allocator);
-        // defer bytes.deinit();
-        // while (true) {
-        //     const br = try replica_stream.read(&buffer); // propogating cmds
-        //     if (br == 0) break;
-        //
-        //     try bytes.appendSlice(buffer[0..br]);
-        //     const bytes_slice = try bytes.toOwnedSliceSentinel(0);
-        //
-        //     std.debug.print("Cmd: {s}\n", .{bytes_slice});
-        // }
-
-        // Commenting out for now - not sure why I would need this (at this point in time)
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
