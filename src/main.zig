@@ -544,13 +544,15 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
-        std.debug.print("handle connection - role: {any} bytes_read {}\n", .{ state.role, bytes_read });
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        std.debug.print("COMMANDS: {s}", .{bytes_slice});
+        std.debug.print(
+            "COMMANDS:{s}, SERVER ROLE:{any}",
+            .{ bytes_slice, state.role },
+        );
 
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser.init(bytes_slice);
@@ -727,7 +729,6 @@ pub fn main() !void {
 
         const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
-        std.debug.print("RDB Bytes read {s}\n", .{&buffer});
 
         // var bytes = std.ArrayList(u8).init(allocator);
         // defer bytes.deinit();
