@@ -122,7 +122,8 @@ fn handle_connection(
 ) !void {
     var close_stream = true;
     var rwl: std.Thread.RwLock = .{};
-    rwl.lock();
+    const is_locked = rwl.tryLock();
+    std.debug.print("Server {any} thread is locked {}", .{ state.role, is_locked });
     defer {
         rwl.unlock();
         if (close_stream) {
