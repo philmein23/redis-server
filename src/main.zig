@@ -736,8 +736,8 @@ pub fn main() !void {
             const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
             if (br == 0) break;
 
-            try bytes.appendslice(buffer[0..br]);
-            const bytes_slice = try bytes.toownedslicesentinel(0);
+            try bytes.appendSlice(buffer[0..br]);
+            const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
             std.debug.print("Cmd: {s}]\n", .{bytes_slice});
         }
