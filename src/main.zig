@@ -550,7 +550,7 @@ fn handle_connection(
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        std.debug.print("leaned buffer: {s}", .{bytes_slice});
+        std.debug.print("COMMANDS: {s}", .{bytes_slice});
 
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser.init(bytes_slice);
@@ -698,7 +698,6 @@ pub fn main() !void {
         defer allocator.free(resp);
 
         _ = try replica_stream.writer().write(resp);
-
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
@@ -730,31 +729,31 @@ pub fn main() !void {
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
         std.debug.print("RDB Bytes read {s}\n", .{&buffer});
 
-        var bytes = std.ArrayList(u8).init(allocator);
-        defer bytes.deinit();
-        while (true) {
-            const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
-            if (br == 0) break;
-
-            try bytes.appendSlice(buffer[0..br]);
-            const bytes_slice = try bytes.toOwnedSliceSentinel(0);
-
-            std.debug.print("Cmd: {s}]\n", .{bytes_slice});
-        }
+        // var bytes = std.ArrayList(u8).init(allocator);
+        // defer bytes.deinit();
+        // while (true) {
+        //     const br = try replica_stream.read(&buffer); // propogating cmds
+        //     if (br == 0) break;
+        //
+        //     try bytes.appendSlice(buffer[0..br]);
+        //     const bytes_slice = try bytes.toOwnedSliceSentinel(0);
+        //
+        //     std.debug.print("Cmd: {s}\n", .{bytes_slice});
+        // }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
-        // const thread = try std.Thread.spawn(
-        //     .{},
-        //     handle_connection,
-        //     .{
-        //         replica_stream,
-        //         stdout,
-        //         allocator,
-        //         &state,
-        //         &store,
-        //     },
-        // );
-        // thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{
+                replica_stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
+        );
+        thread.detach();
     }
 
     while (true) {
