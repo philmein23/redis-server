@@ -544,13 +544,13 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
-        std.debug.print("HANDLE CONNECTION - ROLE: {any} BYTES_READ {}\n", .{ state.role, bytes_read });
+        std.debug.print("handle connection - role: {any} bytes_read {}\n", .{ state.role, bytes_read });
         if (bytes_read == 0) break;
 
-        try bytes.appendSlice(buffer[0..bytes_read]);
-        const bytes_slice = try bytes.toOwnedSliceSentinel(0);
+        try bytes.appendslice(buffer[0..bytes_read]);
+        const bytes_slice = try bytes.toownedslicesentinel(0);
 
-        std.debug.print("LEANED BUFFER: {s}", .{bytes_slice});
+        std.debug.print("leaned buffer: {s}", .{bytes_slice});
 
         try stdout.print("Connection received, buffer being read into\n", .{});
         var parser = Parser.init(bytes_slice);
@@ -730,12 +730,16 @@ pub fn main() !void {
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
         std.debug.print("RDB Bytes read {s}\n", .{&buffer});
 
+        var bytes = std.ArrayList(u8).init(allocator);
+        defer bytes.deinit();
         while (true) {
             const br = try replica_stream.read(&buffer); // reads empty RDB file from master + propogating cmds
             if (br == 0) break;
-            // const cmd = buffer[bytes_read..];
 
-            std.debug.print("Propagated cmds? {s}\n", .{&buffer});
+            try bytes.appendslice(buffer[0..br]);
+            const bytes_slice = try bytes.toownedslicesentinel(0);
+
+            std.debug.print("Cmd: {s}]\n", .{bytes_slice});
         }
 
         // Commenting out for now - not sure why I would need this (at this point in time)
