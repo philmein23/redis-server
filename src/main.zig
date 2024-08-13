@@ -547,8 +547,8 @@ fn handle_connection(
         std.debug.print("handle connection - role: {any} bytes_read {}\n", .{ state.role, bytes_read });
         if (bytes_read == 0) break;
 
-        try bytes.appendslice(buffer[0..bytes_read]);
-        const bytes_slice = try bytes.toownedslicesentinel(0);
+        try bytes.appendSlice(buffer[0..bytes_read]);
+        const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print("leaned buffer: {s}", .{bytes_slice});
 
