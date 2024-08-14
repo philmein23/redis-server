@@ -335,19 +335,18 @@ pub fn main() !void {
         const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
         std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
 
-        try handle_connection(replica_stream, stdout, allocator, &state, &store);
-        // const thread = try std.Thread.spawn(
-        //     .{},
-        //     handle_connection,
-        //     .{
-        //         replica_stream,
-        //         stdout,
-        //         allocator,
-        //         &state,
-        //         &store,
-        //     },
-        // );
-        // thread.detach();
+        const thread = try std.Thread.spawn(
+            .{},
+            handle_connection,
+            .{
+                replica_stream,
+                stdout,
+                allocator,
+                &state,
+                &store,
+            },
+        );
+        thread.detach();
     }
 
     while (true) {
