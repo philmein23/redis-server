@@ -144,7 +144,6 @@ fn handle_connection(
         // var rwl: std.Thread.RwLock = .{};
         // const is_locked = rwl.tryLock();
         // defer rwl.unlock();
-        std.debug.print("Server {any} thread is locked {}\n", .{ state.role, is_locked });
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
