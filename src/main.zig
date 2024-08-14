@@ -349,7 +349,7 @@ pub fn main() !void {
                 &store,
             },
         );
-        thread.detach();
+        thread.join();
     }
 
     while (true) {
