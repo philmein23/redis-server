@@ -141,9 +141,9 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
-        var rwl: std.Thread.RwLock = .{};
-        const is_locked = rwl.tryLock();
-        defer rwl.unlock();
+        // var rwl: std.Thread.RwLock = .{};
+        // const is_locked = rwl.tryLock();
+        // defer rwl.unlock();
         std.debug.print("Server {any} thread is locked {}\n", .{ state.role, is_locked });
         if (bytes_read == 0) break;
 
