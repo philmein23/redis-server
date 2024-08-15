@@ -157,7 +157,7 @@ fn handle_connection(
         for (bytes_slice[1..]) |ch| {
             if (ch == '*') {
                 cmd_buf = bytes_slice[start..end];
-                std.debug.print("CMD BUF: {}\n", .{ch});
+                std.debug.print("CMD BUFFER: {}\n", .{ch});
             }
             end += 1;
         }
