@@ -22,7 +22,8 @@ pub const Parser = struct {
             cmds.deinit();
         }
         var count: usize = 1;
-        while (self.peek() != '0') {
+        while (self.peek() != 0) {
+            std.debug.print("CMD - BEFORE PARSE- {}, COUNT-{}\n", .{ self.buffer[self.curr_index], cmds.items.len });
             const cmd = try self.parse(count);
 
             try cmds.append(cmd);
@@ -37,9 +38,7 @@ pub const Parser = struct {
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
         std.debug.print("COUNT: {}\n", .{count});
-        if (count == 3) {
-            std.debug.print("CURR BYTE: {}\n", .{self.buffer[self.curr_index]});
-        }
+
         if (self.peek() == '*') {
             self.next();
         }
@@ -320,7 +319,7 @@ test "test INFO command" {
 }
 
 test "multiple commands" {
-    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\nyoyb\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n0";
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\nyoyb\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
