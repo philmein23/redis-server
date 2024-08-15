@@ -79,7 +79,7 @@ fn handle_psync(
     allocator: std.mem.Allocator,
     stream: net.Stream,
     state: *ServerState,
-    args: []Arg,
+    args: []const Arg,
 ) !void {
     if (state.replication_id) |rep_id| {
         const resp = try std.fmt.allocPrint(
@@ -160,7 +160,7 @@ fn handle_connection(
         var cmds = try parser._parse();
         defer cmds.deinit();
 
-        for (cmds) |cmd| {
+        for (cmds.items) |cmd| {
             const opt = cmd.opt orelse null;
 
             switch (cmd.tag) {

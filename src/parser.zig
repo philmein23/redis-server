@@ -40,16 +40,14 @@ pub const Parser = struct {
         if (count == 3) {
             std.debug.print("CURR BYTE: {}\n", .{self.buffer[self.curr_index]});
         }
-        if (count == 1) {
-            // if (self.peek() == '*') {
-            //     self.next();
-            // }
-
-            while (std.ascii.isDigit(self.peek())) {
-                self.next();
-            }
-            try self.expect_return_new_line_bytes();
+        if (self.peek() == '*') {
+            self.next();
         }
+
+        while (std.ascii.isDigit(self.peek())) {
+            self.next();
+        }
+        try self.expect_return_new_line_bytes();
 
         if (self.peek() == '$') {
             self.next();
@@ -322,7 +320,7 @@ test "test INFO command" {
 }
 
 test "multiple commands" {
-    const bytes = "*2\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\nyoyb\r\n0";
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\nyoyb\r\n*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n0";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -333,7 +331,7 @@ test "multiple commands" {
         cmds.deinit();
     }
 
-    try std.testing.expectEqual(2, cmds.items.len);
+    try std.testing.expectEqual(3, cmds.items.len);
 }
 
 test "test SET and GET command" {
