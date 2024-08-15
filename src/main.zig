@@ -157,66 +157,69 @@ fn handle_connection(
 
         try stdout.print("Connection received, buffer being read into...\n", .{});
         var parser = Parser.init(allocator, bytes_slice);
-        var command = try parser.parse();
+        var cmds = try parser._parse();
+        defer cmds.deinit();
 
-        const opt = command.opt orelse null;
+        for (cmds) |cmd| {
+            const opt = cmd.opt orelse null;
 
-        switch (command.tag) {
-            Tag.echo => {
-                const echo_arg = command.args[0].content;
-                const terminator = "\r\n";
-                const length = echo_arg.len;
+            switch (cmd.tag) {
+                Tag.echo => {
+                    const echo_arg = cmd.args[0].content;
+                    const terminator = "\r\n";
+                    const length = echo_arg.len;
 
-                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
-                    length,
-                    terminator,
-                    echo_arg,
-                    terminator,
-                });
-                defer allocator.free(resp);
+                    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
+                        length,
+                        terminator,
+                        echo_arg,
+                        terminator,
+                    });
+                    defer allocator.free(resp);
 
-                _ = try stream.write(resp);
-            },
-            Tag.ping => {
-                _ = try stream.write("+PONG\r\n");
-            },
-            Tag.set => {
-                if (opt != null) {
-                    try store.set(command.args[0].content, command.args[1].content, opt.?.content);
-                } else {
-                    try store.set(command.args[0].content, command.args[1].content, null);
-                }
+                    _ = try stream.write(resp);
+                },
+                Tag.ping => {
+                    _ = try stream.write("+PONG\r\n");
+                },
+                Tag.set => {
+                    if (opt != null) {
+                        try store.set(cmd.args[0].content, cmd.args[1].content, opt.?.content);
+                    } else {
+                        try store.set(cmd.args[0].content, cmd.args[1].content, null);
+                    }
 
-                if (state.role == .master) {
-                    _ = try stream.write("+OK\r\n");
-                    try state.forward_cmd(bytes_slice);
-                }
-            },
-            Tag.get => try handle_get(
-                stream,
-                allocator,
-                store,
-                command.args[0],
-            ),
-            Tag.info => try handle_info(
-                stream,
-                allocator,
-                state,
-            ),
-            Tag.replconf => {
-                close_stream = false;
-                _ = try stream.write("+OK\r\n");
-            },
-            Tag.psync => {
-                try handle_psync(
-                    allocator,
+                    if (state.role == .master) {
+                        _ = try stream.write("+OK\r\n");
+                        try state.forward_cmd(bytes_slice);
+                    }
+                },
+                Tag.get => try handle_get(
                     stream,
+                    allocator,
+                    store,
+                    cmd.args[0],
+                ),
+                Tag.info => try handle_info(
+                    stream,
+                    allocator,
                     state,
-                    &command.args,
-                );
+                ),
+                Tag.replconf => {
+                    close_stream = false;
+                    _ = try stream.write("+OK\r\n");
+                },
+                Tag.psync => {
+                    try handle_psync(
+                        allocator,
+                        stream,
+                        state,
+                        &cmd.args,
+                    );
 
-                state.add_replica(stream);
-            },
+                    state.add_replica(stream);
+                },
+            }
         }
     }
 }
@@ -347,7 +350,7 @@ pub fn main() !void {
                 &store,
             },
         );
-        thread.detach();
+        thread.join();
     }
 
     while (true) {
