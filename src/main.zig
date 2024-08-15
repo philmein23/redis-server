@@ -167,7 +167,7 @@ fn handle_connection(
             .{bytes_slice},
         );
 
-        try stdout.print("Connection received, buffer being read into\n", .{});
+        try stdout.print("Connection received, buffer being read into...\n", .{});
         var parser = Parser.init(bytes_slice);
         var command = try parser.parse();
 
