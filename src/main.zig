@@ -121,11 +121,11 @@ fn handle_connection(
     store: *RedisStore,
 ) !void {
     var close_stream = true;
-    var mtx: std.Thread.Mutex = .{};
-    mtx.lock();
+    // var mtx: std.Thread.Mutex = .{};
+    // mtx.lock();
 
     defer {
-        mtx.unlock();
+        // mtx.unlock();
         if (close_stream) {
             stream.close();
             std.debug.print("Closing connection....", .{});
@@ -144,9 +144,7 @@ fn handle_connection(
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
-        // var rwl: std.Thread.RwLock = .{};
-        // const is_locked = rwl.tryLock();
-        // defer rwl.unlock();
+
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
