@@ -150,6 +150,18 @@ fn handle_connection(
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
+        const start: usize = 0;
+        var end: usize = 1;
+        var cmd_buf: []const u8 = undefined;
+
+        for (bytes_slice[1..]) |ch| {
+            if (ch == '*') {
+                cmd_buf = bytes_slice[start..end];
+                std.debug.print("CMD BUF: {}\n", .{ch});
+            }
+            end += 1;
+        }
+
         std.debug.print(
             "COMMANDS:{s}\n",
             .{bytes_slice},
