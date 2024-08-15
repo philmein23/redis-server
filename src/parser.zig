@@ -8,22 +8,48 @@ const std = @import("std");
 pub const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
+    allocator: std.mem.Allocator,
 
-    pub fn init(buffer: [:0]const u8) Parser {
-        return Parser{ .buffer = buffer, .curr_index = 0 };
+    pub fn init(allocator: std.mem.Allocator, buffer: [:0]const u8) Parser {
+        return Parser{ .buffer = buffer, .curr_index = 0, .allocator = allocator };
     }
 
-    pub fn parse(self: *Parser) !Command {
-        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
-        // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
-        if (self.peek() == '*') {
-            self.next();
+    pub fn _parse(self: *Parser) !std.ArrayList(Command) {
+        var cmds = std.ArrayList(Command).init(self.allocator);
+
+        // in case an error occurs, we want to deallocate resources from the array list to prevent memory leak
+        errdefer {
+            cmds.deinit();
+        }
+        var count: usize = 1;
+        while (self.peek() != '0') {
+            const cmd = try self.parse(count);
+
+            try cmds.append(cmd);
+            count += 1;
+            std.debug.print("CMD AFTER APPEND {}\n", .{cmds.items.len});
         }
 
-        while (std.ascii.isDigit(self.peek())) {
-            self.next();
+        return cmds;
+    }
+
+    pub fn parse(self: *Parser, count: usize) !Command {
+        var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
+        // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
+        std.debug.print("COUNT: {}\n", .{count});
+        if (count == 3) {
+            std.debug.print("CURR BYTE: {}\n", .{self.buffer[self.curr_index]});
         }
-        try self.expect_return_new_line_bytes();
+        if (count == 1) {
+            // if (self.peek() == '*') {
+            //     self.next();
+            // }
+
+            while (std.ascii.isDigit(self.peek())) {
+                self.next();
+            }
+            try self.expect_return_new_line_bytes();
+        }
 
         if (self.peek() == '$') {
             self.next();
@@ -97,10 +123,16 @@ pub const Parser = struct {
 
                 try self.expect_return_new_line_bytes();
 
-                // try to parse optional expiry parameter
-                if (self.peek() != '$') return command;
+                if (self.peek() == '$') {
+                    self.next();
+                }
 
-                self.next();
+                if (self.peek() == '2') {
+                    // parse expiration option flag (px)
+                    self.next();
+                } else {
+                    return command;
+                }
 
                 const px = try self.parse_string();
 
@@ -237,9 +269,13 @@ pub const Parser = struct {
 };
 
 test "test PSYNC" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
     const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
     try std.testing.expectEqual(Tag.psync, command.tag);
     try std.testing.expectEqualSlices(u8, "?", command.args[0].content);
     try std.testing.expectEqualSlices(u8, "0", command.args[1].content);
@@ -247,8 +283,12 @@ test "test PSYNC" {
 
 test "test REPLCONF" {
     const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
     try std.testing.expectEqual(Tag.replconf, command.tag);
 }
 
@@ -261,21 +301,39 @@ test "test SET with expiry opt" {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
-    std.debug.print("Command key-val content- key: {s}, val: {s}\n", .{ command.args[1].content, command.args[1].content });
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
     try store.set(command.args[0].content, command.args[1].content, command.opt.?.content);
     try std.testing.expectEqual(Tag.set, command.tag);
     try std.testing.expectEqualSlices(u8, "100", command.opt.?.content);
 }
 
 test "test INFO command" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
     const bytes = "*3\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n";
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
 
     try std.testing.expectEqual(Tag.info, command.tag);
     try std.testing.expectEqualSlices(u8, "replication", command.args[0].content);
+}
+
+test "multiple commands" {
+    const bytes = "*2\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\nyoyb\r\n0";
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+    var parser = Parser.init(allocator, bytes);
+    const cmds = try parser._parse();
+    defer {
+        cmds.deinit();
+    }
+
+    try std.testing.expectEqual(2, cmds.items.len);
 }
 
 test "test SET and GET command" {
@@ -287,14 +345,14 @@ test "test SET and GET command" {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
     try store.set(command.args[0].content, command.args[1].content, null);
     try std.testing.expectEqual(Tag.set, command.tag);
 
     const bytes_two = "*3\r\n$3\r\nGET\r\n$5\r\napple\r\n";
-    var parser_two = Parser.init(bytes_two);
-    const command_two = try parser_two.parse();
+    var parser_two = Parser.init(allocator, bytes_two);
+    const command_two = try parser_two.parse(1);
     const get_value = try store.get(command_two.args[0].content);
 
     try std.testing.expectEqual(Tag.get, command_two.tag);
@@ -302,12 +360,14 @@ test "test SET and GET command" {
 }
 
 test "test parse PING command" {
-    const bytes = "*1\r\n$4\r\nping\r\n";
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    const allocator = gpa.allocator();
+    const bytes = "*1\r\n$4\r\nping\r\n";
+
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
 
     try std.testing.expectEqual(Tag.ping, command.tag);
 }
@@ -317,8 +377,9 @@ test "test parse ECHO command" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    var parser = Parser.init(bytes);
-    const command = try parser.parse();
+    const allocator = gpa.allocator();
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse(1);
 
     try std.testing.expectEqual(Tag.echo, command.tag);
     const exp = "pineapple";

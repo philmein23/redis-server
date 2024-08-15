@@ -150,25 +150,13 @@ fn handle_connection(
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        const start: usize = 0;
-        var end: usize = 1;
-        var cmd_buf: []const u8 = undefined;
-
-        for (bytes_slice[1..]) |ch| {
-            if (ch == '*') {
-                cmd_buf = bytes_slice[start..end];
-                std.debug.print("CMD BUFFER: {}\n", .{ch});
-            }
-            end += 1;
-        }
-
         std.debug.print(
             "COMMANDS:{s}\n",
             .{bytes_slice},
         );
 
         try stdout.print("Connection received, buffer being read into...\n", .{});
-        var parser = Parser.init(bytes_slice);
+        var parser = Parser.init(allocator, bytes_slice);
         var command = try parser.parse();
 
         const opt = command.opt orelse null;
