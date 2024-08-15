@@ -364,7 +364,7 @@ pub fn main() !void {
 
     while (true) {
         const client_connection = try server.accept();
-        try stdout.print("Connection received {} is sending data\n", .{client_connection.address});
+        try stdout.print("Connection received {} is sending data..\n", .{client_connection.address});
 
         const thread = try std.Thread.spawn(
             .{},
