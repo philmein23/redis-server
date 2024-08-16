@@ -147,6 +147,8 @@ pub const Parser = struct {
             Tag.info => {
                 command.args[0] = try self.parse_string();
 
+                try self.expect_return_new_line_bytes();
+
                 return command;
             },
             Tag.replconf => {
