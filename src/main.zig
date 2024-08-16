@@ -350,7 +350,7 @@ pub fn main() !void {
                 &store,
             },
         );
-        thread.join();
+        thread.detach();
     }
 
     while (true) {
