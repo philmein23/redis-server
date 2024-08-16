@@ -109,6 +109,8 @@ pub const Parser = struct {
             Tag.ping => return command,
             Tag.echo, Tag.get => {
                 command.args[0] = try self.parse_string();
+                try self.expect_return_new_line_bytes();
+
                 return command;
             },
             Tag.set => {
