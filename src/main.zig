@@ -121,11 +121,8 @@ fn handle_connection(
     store: *RedisStore,
 ) !void {
     var close_stream = true;
-    // var mtx: std.Thread.Mutex = .{};
-    // mtx.lock();
 
     defer {
-        // mtx.unlock();
         if (close_stream) {
             stream.close();
             std.debug.print("Closing connection....", .{});
@@ -183,6 +180,7 @@ fn handle_connection(
                     _ = try stream.write("+PONG\r\n");
                 },
                 Tag.set => {
+                    std.debug.print("SETTING CMD\n", .{});
                     if (opt != null) {
                         try store.set(cmd.args[0].content, cmd.args[1].content, opt.?.content);
                     } else {
