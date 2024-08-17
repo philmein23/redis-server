@@ -21,14 +21,10 @@ pub const Parser = struct {
         errdefer {
             cmds.deinit();
         }
-        var count: usize = 1;
         while (self.peek() != 0) {
-            std.debug.print("CMD - BEFORE PARSE- {}, COUNT-{}\n", .{ self.buffer[self.curr_index], cmds.items.len });
             const cmd = try self.parse();
 
             try cmds.append(cmd);
-            count += 1;
-            std.debug.print("CMD AFTER APPEND {}\n", .{cmds.items.len});
         }
 
         return cmds;

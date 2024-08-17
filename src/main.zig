@@ -1,5 +1,4 @@
 const net = std.net;
-const rand = std.crypto.random;
 const std = @import("std");
 const Command = @import("type.zig").Command;
 const Arg = @import("type.zig").Arg;
@@ -95,7 +94,6 @@ fn handle_psync(
     const Decoder = std.base64.standard.Decoder;
 
     const decoded_length = try Decoder.calcSizeForSlice(encoded_empty_rdb);
-    std.debug.print("DECODED LENGTH: {}", .{decoded_length});
     const decoded_buffer = try allocator.alloc(u8, decoded_length);
     defer allocator.free(decoded_buffer);
 
@@ -121,13 +119,9 @@ fn handle_connection(
     state: *ServerState,
     store: *RedisStore,
 ) !void {
-    var close_stream = true;
-
     defer {
-        if (close_stream) {
-            stream.close();
-            std.debug.print("Closing connection....", .{});
-        }
+        stream.close();
+        std.debug.print("Closing connection....", .{});
     }
 
     var buffer: [100:0]u8 = undefined;
@@ -181,7 +175,6 @@ fn handle_connection(
                     _ = try stream.write("+PONG\r\n");
                 },
                 Tag.set => {
-                    std.debug.print("SETTING CMD\n", .{});
                     if (opt != null) {
                         try store.set(cmd.args[0].content, cmd.args[1].content, opt.?.content);
                     } else {
@@ -205,7 +198,6 @@ fn handle_connection(
                     state,
                 ),
                 Tag.replconf => {
-                    close_stream = false;
                     _ = try stream.write("+OK\r\n");
                 },
                 Tag.psync => {
@@ -228,9 +220,12 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
     var port: u16 = 6379;
 
-    var state = ServerState.init();
+    var state = ServerState.init(allocator);
 
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
@@ -266,17 +261,7 @@ pub fn main() !void {
     }
 
     if (state.role == .master) {
-        var master_replication_id: [40:0]u8 = undefined;
-        var i: usize = 0;
-        while (i < master_replication_id.len) {
-            const rand_int = rand.int(u8);
-
-            if (std.ascii.isAlphanumeric(rand_int)) {
-                master_replication_id[i] = rand_int;
-                i += 1;
-            }
-        }
-        state.replication_id = &master_replication_id;
+        try state.generate_master_replication_id();
     }
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
@@ -286,12 +271,12 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
     var store = RedisStore.init(allocator);
     defer store.deinit();
+
+    // const T1 = struct { fd: [5]u8 };
+    //
+    // std.debug.print("TEST ALIGNOF: {}", .{@alignOf(T1)});
 
     if (state.master_port != null) {
         const master_address = try net.Address.resolveIp(state.master_host.?, state.master_port.?);
