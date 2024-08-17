@@ -1,4 +1,5 @@
 const std = @import("std");
+const rand = std.crypto.random;
 const net = std.net;
 pub const Loc = struct { start: usize, end: usize };
 pub const Tag = enum { echo, ping, set, get, info, replconf, psync };
@@ -25,14 +26,33 @@ pub const ServerState = struct {
     replica_count: u8 = 0,
     master_host: ?[]const u8 = null,
     master_port: ?u16 = null,
+    allocator: std.mem.Allocator,
 
-    pub fn init() ServerState {
-        return .{ .replicas = undefined };
+    pub fn init(allocator: std.mem.Allocator) ServerState {
+        return .{ .replicas = undefined, .allocator = allocator };
+    }
+
+    pub fn deinit(self: *ServerState) !void {
+        self.allocator.free(self.replication_id.?);
+    }
+
+    pub fn generate_master_replication_id(self: *ServerState) !void {
+        var rep_id_slice = try self.allocator.alloc(u8, 40);
+        var i: usize = 0;
+
+        while (i < rep_id_slice.len) {
+            const rand_int = rand.int(u8);
+
+            if (std.ascii.isAlphanumeric(rand_int)) {
+                rep_id_slice[i] = rand_int;
+                i += 1;
+            }
+        }
+        self.replication_id = rep_id_slice;
     }
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
         for (0..self.replica_count) |i| {
-            std.debug.print("FORWARDING CMD: {s}", .{cmd_buf});
             try self.replicas[i].write(cmd_buf);
         }
     }

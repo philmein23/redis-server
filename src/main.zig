@@ -1,5 +1,4 @@
 const net = std.net;
-const rand = std.crypto.random;
 const std = @import("std");
 const Command = @import("type.zig").Command;
 const Arg = @import("type.zig").Arg;
@@ -120,13 +119,9 @@ fn handle_connection(
     state: *ServerState,
     store: *RedisStore,
 ) !void {
-    var close_stream = true;
-
     defer {
-        if (close_stream) {
-            stream.close();
-            std.debug.print("Closing connection....", .{});
-        }
+        stream.close();
+        std.debug.print("Closing connection....", .{});
     }
 
     var buffer: [100:0]u8 = undefined;
@@ -180,7 +175,6 @@ fn handle_connection(
                     _ = try stream.write("+PONG\r\n");
                 },
                 Tag.set => {
-                    std.debug.print("SETTING CMD\n", .{});
                     if (opt != null) {
                         try store.set(cmd.args[0].content, cmd.args[1].content, opt.?.content);
                     } else {
@@ -204,7 +198,6 @@ fn handle_connection(
                     state,
                 ),
                 Tag.replconf => {
-                    close_stream = false;
                     _ = try stream.write("+OK\r\n");
                 },
                 Tag.psync => {
@@ -227,9 +220,12 @@ pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
 
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
     var port: u16 = 6379;
 
-    var state = ServerState.init();
+    var state = ServerState.init(allocator);
 
     while (args.next()) |arg| {
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
@@ -265,17 +261,7 @@ pub fn main() !void {
     }
 
     if (state.role == .master) {
-        var master_replication_id: [40:0]u8 = undefined;
-        var i: usize = 0;
-        while (i < master_replication_id.len) {
-            const rand_int = rand.int(u8);
-
-            if (std.ascii.isAlphanumeric(rand_int)) {
-                master_replication_id[i] = rand_int;
-                i += 1;
-            }
-        }
-        state.replication_id = &master_replication_id;
+        try state.generate_master_replication_id();
     }
 
     const address = try net.Address.resolveIp("127.0.0.1", port);
@@ -285,12 +271,12 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
     var store = RedisStore.init(allocator);
     defer store.deinit();
+
+    // const T1 = struct { fd: [5]u8 };
+    //
+    // std.debug.print("TEST ALIGNOF: {}", .{@alignOf(T1)});
 
     if (state.master_port != null) {
         const master_address = try net.Address.resolveIp(state.master_host.?, state.master_port.?);
@@ -311,17 +297,19 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-        const bytes_read = try replica_stream.read(&buffer); // reads FULLSYNC response from master
+
+        var buf2: [56]u8 = undefined;
+        const bytes_read = try replica_stream.readAll(&buf2); // reads FULLSYNC response from master
         var bound: usize = 0;
 
-        for (buffer, 0..) |ch, i| {
+        for (buf2, 0..) |ch, i| {
             if (ch == ' ') {
                 bound = i + 1;
                 break;
             }
         }
 
-        const buffer_two = buffer[bound..bytes_read];
+        const buffer_two = buf2[bound..bytes_read];
 
         for (buffer_two, 0..) |ch, i| {
             if (ch == ' ') {
@@ -334,8 +322,8 @@ pub fn main() !void {
 
         state.replication_id = rep_id;
 
-        const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
-        std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
+        var buf3: [93]u8 = undefined;
+        _ = try replica_stream.readAll(&buf3); // reads empty RDB file from master
 
         const thread = try std.Thread.spawn(
             .{},
