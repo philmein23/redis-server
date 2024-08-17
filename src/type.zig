@@ -26,6 +26,7 @@ pub const ServerState = struct {
     replica_count: u8 = 0,
     master_host: ?[]const u8 = null,
     master_port: ?u16 = null,
+    port: u16 = 6379,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {

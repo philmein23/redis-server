@@ -217,54 +217,20 @@ fn handle_connection(
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    var args = std.process.args();
-    _ = args.skip();
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    var port: u16 = 6379;
 
+    const allocator = gpa.allocator();
     var state = ServerState.init(allocator);
 
-    while (args.next()) |arg| {
-        if (std.ascii.eqlIgnoreCase(arg, "--port")) {
-            if (args.next()) |p| {
-                port = try std.fmt.parseInt(u16, p, 10);
-            }
-        }
-
-        if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
-            if (args.next()) |master_host_port| {
-                var start: usize = 0;
-                var end: usize = 0;
-
-                for (master_host_port, 0..) |ch, idx| {
-                    if (ch == ' ') {
-                        state.master_host = master_host_port[start..end];
-                        if (master_host_port[idx + 1] != ' ') {
-                            start = idx + 1;
-                        }
-                        break;
-                    }
-                    end += 1;
-                }
-
-                state.master_port = try std.fmt.parseInt(u16, master_host_port[start..], 10);
-                if (std.ascii.eqlIgnoreCase(state.master_host.?, "localhost")) {
-                    state.master_host = "127.0.0.1";
-                }
-            }
-
-            state.role = .slave;
-        }
-    }
+    try handle_args(&state);
 
     if (state.role == .master) {
         try state.generate_master_replication_id();
     }
 
-    const address = try net.Address.resolveIp("127.0.0.1", port);
+    const address = try net.Address.resolveIp("127.0.0.1", state.port);
 
     var server = try address.listen(.{
         .reuse_address = true,
@@ -275,55 +241,10 @@ pub fn main() !void {
     defer store.deinit();
 
     // const T1 = struct { fd: [5]u8 };
-    //
     // std.debug.print("TEST ALIGNOF: {}", .{@alignOf(T1)});
 
     if (state.master_port != null) {
-        const master_address = try net.Address.resolveIp(state.master_host.?, state.master_port.?);
-        const replica_stream = try net.tcpConnectToAddress(master_address);
-
-        var replica_writer = replica_stream.writer();
-        const ping_resp = "*1\r\n$4\r\nPING\r\n";
-        _ = try replica_writer.write(ping_resp);
-
-        var buffer: [1024:0]u8 = undefined;
-        _ = try replica_stream.read(&buffer); // master responds w/ +PONG
-
-        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{port});
-        defer allocator.free(resp);
-
-        _ = try replica_stream.writer().write(resp);
-        _ = try replica_stream.read(&buffer); // master responds w/ +OK
-        _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
-        _ = try replica_stream.read(&buffer); // master responds w/ +OK
-        _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-
-        var buf2: [56]u8 = undefined;
-        const bytes_read = try replica_stream.readAll(&buf2); // reads FULLSYNC response from master
-        var bound: usize = 0;
-
-        for (buf2, 0..) |ch, i| {
-            if (ch == ' ') {
-                bound = i + 1;
-                break;
-            }
-        }
-
-        const buffer_two = buf2[bound..bytes_read];
-
-        for (buffer_two, 0..) |ch, i| {
-            if (ch == ' ') {
-                bound = i - 1;
-                break;
-            }
-        }
-
-        const rep_id = buffer_two[0..bound];
-
-        state.replication_id = rep_id;
-
-        var buf3: [93]u8 = undefined;
-        _ = try replica_stream.readAll(&buf3); // reads empty RDB file from master
+        const replica_stream = try handle_handshake(&state, allocator);
 
         const thread = try std.Thread.spawn(
             .{},
@@ -356,4 +277,92 @@ pub fn main() !void {
         );
         thread.detach();
     }
+}
+
+fn handle_args(state: *ServerState) !void {
+    var args = std.process.args();
+    _ = args.skip();
+
+    while (args.next()) |arg| {
+        if (std.ascii.eqlIgnoreCase(arg, "--port")) {
+            if (args.next()) |p| {
+                state.port = try std.fmt.parseInt(u16, p, 10);
+            }
+        }
+
+        if (std.ascii.eqlIgnoreCase(arg, "--replicaof")) {
+            if (args.next()) |master_host_port| {
+                var start: usize = 0;
+                var end: usize = 0;
+
+                for (master_host_port, 0..) |ch, idx| {
+                    if (ch == ' ') {
+                        state.master_host = master_host_port[start..end];
+                        if (master_host_port[idx + 1] != ' ') {
+                            start = idx + 1;
+                        }
+                        break;
+                    }
+                    end += 1;
+                }
+
+                state.master_port = try std.fmt.parseInt(u16, master_host_port[start..], 10);
+                if (std.ascii.eqlIgnoreCase(state.master_host.?, "localhost")) {
+                    state.master_host = "127.0.0.1";
+                }
+            }
+
+            state.role = .slave;
+        }
+    }
+}
+
+fn handle_handshake(state: *ServerState, allocator: std.mem.Allocator) !std.net.Stream {
+    const master_address = try net.Address.resolveIp(state.master_host.?, state.master_port.?);
+    const replica_stream = try net.tcpConnectToAddress(master_address);
+
+    var replica_writer = replica_stream.writer();
+    const ping_resp = "*1\r\n$4\r\nPING\r\n";
+    _ = try replica_writer.write(ping_resp);
+
+    var buffer: [1024:0]u8 = undefined;
+    _ = try replica_stream.read(&buffer); // master responds w/ +PONG
+
+    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n{d}\r\n", .{state.port});
+    defer allocator.free(resp);
+
+    _ = try replica_stream.writer().write(resp);
+    _ = try replica_stream.read(&buffer); // master responds w/ +OK
+    _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
+    _ = try replica_stream.read(&buffer); // master responds w/ +OK
+    _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+
+    var buf2: [56]u8 = undefined;
+    const bytes_read = try replica_stream.readAll(&buf2); // reads FULLSYNC response from master
+    var bound: usize = 0;
+
+    for (buf2, 0..) |ch, i| {
+        if (ch == ' ') {
+            bound = i + 1;
+            break;
+        }
+    }
+
+    const buffer_two = buf2[bound..bytes_read];
+
+    for (buffer_two, 0..) |ch, i| {
+        if (ch == ' ') {
+            bound = i - 1;
+            break;
+        }
+    }
+
+    const rep_id = buffer_two[0..bound];
+
+    state.replication_id = rep_id;
+
+    var buf3: [93]u8 = undefined;
+    _ = try replica_stream.readAll(&buf3); // reads empty RDB file from master
+
+    return replica_stream;
 }
