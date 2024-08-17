@@ -95,6 +95,7 @@ fn handle_psync(
     const Decoder = std.base64.standard.Decoder;
 
     const decoded_length = try Decoder.calcSizeForSlice(encoded_empty_rdb);
+    std.debug.print("DECODED LENGTH: {}", .{decoded_length});
     const decoded_buffer = try allocator.alloc(u8, decoded_length);
     defer allocator.free(decoded_buffer);
 
@@ -311,17 +312,19 @@ pub fn main() !void {
         _ = try replica_stream.writer().write("*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n");
         _ = try replica_stream.read(&buffer); // master responds w/ +OK
         _ = try replica_stream.writer().write("*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-        const bytes_read = try replica_stream.read(&buffer); // reads FULLSYNC response from master
+
+        var buf2: [56]u8 = undefined;
+        const bytes_read = try replica_stream.readAll(&buf2); // reads FULLSYNC response from master
         var bound: usize = 0;
 
-        for (buffer, 0..) |ch, i| {
+        for (buf2, 0..) |ch, i| {
             if (ch == ' ') {
                 bound = i + 1;
                 break;
             }
         }
 
-        const buffer_two = buffer[bound..bytes_read];
+        const buffer_two = buf2[bound..bytes_read];
 
         for (buffer_two, 0..) |ch, i| {
             if (ch == ' ') {
@@ -334,8 +337,8 @@ pub fn main() !void {
 
         state.replication_id = rep_id;
 
-        const rdb_bytes_read = try replica_stream.read(&buffer); // reads empty RDB file from master
-        std.debug.print("RDB Bytes read {}\n", .{rdb_bytes_read});
+        var buf3: [93]u8 = undefined;
+        _ = try replica_stream.readAll(&buf3); // reads empty RDB file from master
 
         const thread = try std.Thread.spawn(
             .{},

@@ -32,7 +32,6 @@ pub const ServerState = struct {
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
         for (0..self.replica_count) |i| {
-            std.debug.print("FORWARDING CMD: {s}", .{cmd_buf});
             try self.replicas[i].write(cmd_buf);
         }
     }

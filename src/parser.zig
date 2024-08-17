@@ -24,7 +24,7 @@ pub const Parser = struct {
         var count: usize = 1;
         while (self.peek() != 0) {
             std.debug.print("CMD - BEFORE PARSE- {}, COUNT-{}\n", .{ self.buffer[self.curr_index], cmds.items.len });
-            const cmd = try self.parse(count);
+            const cmd = try self.parse();
 
             try cmds.append(cmd);
             count += 1;
@@ -34,10 +34,9 @@ pub const Parser = struct {
         return cmds;
     }
 
-    pub fn parse(self: *Parser, count: usize) !Command {
+    pub fn parse(self: *Parser) !Command {
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
-        std.debug.print("COUNT: {}\n", .{count});
 
         if (self.peek() == '*') {
             self.next();
@@ -276,7 +275,7 @@ test "test PSYNC" {
     const allocator = gpa.allocator();
     const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
     try std.testing.expectEqual(Tag.psync, command.tag);
     try std.testing.expectEqualSlices(u8, "?", command.args[0].content);
     try std.testing.expectEqualSlices(u8, "0", command.args[1].content);
@@ -289,7 +288,7 @@ test "test REPLCONF" {
 
     const allocator = gpa.allocator();
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
     try std.testing.expectEqual(Tag.replconf, command.tag);
 }
 
@@ -303,7 +302,7 @@ test "test SET with expiry opt" {
     defer store.deinit();
 
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
     try store.set(command.args[0].content, command.args[1].content, command.opt.?.content);
     try std.testing.expectEqual(Tag.set, command.tag);
     try std.testing.expectEqualSlices(u8, "100", command.opt.?.content);
@@ -316,7 +315,7 @@ test "test INFO command" {
     const allocator = gpa.allocator();
     const bytes = "*3\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n";
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
 
     try std.testing.expectEqual(Tag.info, command.tag);
     try std.testing.expectEqualSlices(u8, "replication", command.args[0].content);
@@ -347,13 +346,13 @@ test "test SET and GET command" {
     defer store.deinit();
 
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
     try store.set(command.args[0].content, command.args[1].content, null);
     try std.testing.expectEqual(Tag.set, command.tag);
 
     const bytes_two = "*3\r\n$3\r\nGET\r\n$5\r\napple\r\n";
     var parser_two = Parser.init(allocator, bytes_two);
-    const command_two = try parser_two.parse(1);
+    const command_two = try parser_two.parse();
     const get_value = try store.get(command_two.args[0].content);
 
     try std.testing.expectEqual(Tag.get, command_two.tag);
@@ -368,7 +367,7 @@ test "test parse PING command" {
     const bytes = "*1\r\n$4\r\nping\r\n";
 
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
 
     try std.testing.expectEqual(Tag.ping, command.tag);
 }
@@ -380,7 +379,7 @@ test "test parse ECHO command" {
 
     const allocator = gpa.allocator();
     var parser = Parser.init(allocator, bytes);
-    const command = try parser.parse(1);
+    const command = try parser.parse();
 
     try std.testing.expectEqual(Tag.echo, command.tag);
     const exp = "pineapple";
