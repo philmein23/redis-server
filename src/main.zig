@@ -104,10 +104,7 @@ fn handle_psync(
         "${d}\r\n{s}",
         .{ decoded_length, decoded_buffer },
     );
-    std.debug.print("Decoded length: {d}, decoded buffer: {any}\n", .{
-        decoded_length,
-        decoded_buffer,
-    });
+
     defer allocator.free(rdb_resp);
     _ = try stream.write(rdb_resp);
 }
@@ -264,6 +261,7 @@ pub fn main() !void {
         const client_connection = try server.accept();
         try stdout.print("Connection received {} is sending data..\n", .{client_connection.address});
 
+        std.debug.print("CONNECTION RECEIVED- ROLE: {any}", .{state.role});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,

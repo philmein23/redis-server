@@ -3,10 +3,22 @@ const rand = std.crypto.random;
 const net = std.net;
 pub const Loc = struct { start: usize, end: usize };
 pub const Tag = enum { echo, ping, set, get, info, replconf, psync };
-pub const Command = struct { loc: Loc, tag: Tag, args: [2]Arg, opt: ?Arg = null };
+pub const Command = struct { loc: Loc, tag: Tag, args: [3]Arg, opt: ?Arg = null };
 pub const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 pub const Role = enum { master, slave };
 
+// TODO: flesh this out and replace current impl of Command
+// const Command_ = union(enum) {
+//     ping,
+//     info,
+//     set,
+//     get,
+//     psync,
+//     replconf,
+//
+//     const Set = struct {};
+// };
+//
 pub const Replica = struct {
     stream: net.Stream,
 
@@ -20,7 +32,7 @@ pub const Replica = struct {
 };
 
 pub const ServerState = struct {
-    replicas: [5]Replica,
+    replicas: [5]Replica, // should probably turn this into an array list
     role: Role = .master,
     replication_id: ?[]u8 = null,
     replica_count: u8 = 0,
@@ -34,7 +46,9 @@ pub const ServerState = struct {
     }
 
     pub fn deinit(self: *ServerState) !void {
-        self.allocator.free(self.replication_id.?);
+        if (self.replication_id != null) {
+            self.allocator.free(self.replication_id.?);
+        }
     }
 
     pub fn generate_master_replication_id(self: *ServerState) !void {

@@ -147,8 +147,13 @@ pub const Parser = struct {
                 return command;
             },
             Tag.replconf => {
+                var i: usize = 0;
                 while (std.ascii.isASCII(self.peek()) and self.peek() != 0) {
-                    _ = try self.parse_string();
+                    const arg = try self.parse_string();
+
+                    command.args[i] = arg;
+
+                    i += 1;
 
                     try self.expect_return_new_line_bytes();
                 }
@@ -213,6 +218,15 @@ pub const Parser = struct {
         }
 
         try self.expect_return_new_line_bytes();
+
+        if (self.peek() == '*') {
+            self.next();
+            return Arg{
+                .loc = Loc{ .start = self.curr_index, .end = self.curr_index },
+                .tag = undefined,
+                .content = "*",
+            };
+        }
 
         if (std.ascii.isAlphanumeric(self.peek())) {
             self.next();
@@ -286,6 +300,17 @@ test "test REPLCONF" {
     var parser = Parser.init(allocator, bytes);
     const command = try parser.parse();
     try std.testing.expectEqual(Tag.replconf, command.tag);
+    try std.testing.expectEqualSlices(u8, "listening-port", command.args[0].content);
+    try std.testing.expectEqualSlices(u8, "6379", command.args[1].content);
+
+    const bytes_two = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n*\r\n";
+
+    var parser_two = Parser.init(allocator, bytes_two);
+    const command_two = try parser_two.parse();
+
+    try std.testing.expectEqual(Tag.replconf, command_two.tag);
+    try std.testing.expectEqualSlices(u8, "ACK", command_two.args[0].content);
+    try std.testing.expectEqualSlices(u8, "*", command_two.args[1].content);
 }
 
 test "test SET with expiry opt" {
