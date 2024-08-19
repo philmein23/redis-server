@@ -131,6 +131,8 @@ fn handle_connection(
     var bytes = std.ArrayList(u8).init(allocator);
     defer bytes.deinit();
 
+    var get_ack_count: usize = 0;
+
     while (true) {
         const bytes_read = try reader.read(&buffer);
 
@@ -169,6 +171,17 @@ fn handle_connection(
                     _ = try stream.write(resp);
                 },
                 Tag.ping => {
+                    switch (state.role) {
+                        .master => {
+                            try state.forward_cmd(bytes_slice);
+                        },
+                        .slave => {
+                            if (state.cmd_bytes_count != null) {
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + bytes_read;
+                            }
+                            return;
+                        },
+                    }
                     _ = try stream.write("+PONG\r\n");
                 },
                 Tag.set => {
@@ -201,9 +214,24 @@ fn handle_connection(
 
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
                         switch (state.role) {
-                            .master => try state.forward_cmd(bytes_slice),
+                            .master => {
+                                _ = try stream.write("+OK\r\n");
+                                try state.forward_cmd(bytes_slice);
+                            },
                             .slave => {
-                                _ = try stream.write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n");
+                                if (get_ack_count == 0) {
+                                    state.cmd_bytes_count = 0;
+                                }
+
+                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n{?d}\r\n", .{state.cmd_bytes_count});
+                                defer allocator.free(resp);
+
+                                const bytes_count = try stream.write(resp);
+
+                                std.debug.print("UPDATE COUNT cmd_byte_count {}, bytes_count {}", .{ state.cmd_bytes_count.?, bytes_count });
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + bytes_count;
+
+                                get_ack_count += 1;
                             },
                         }
                     }

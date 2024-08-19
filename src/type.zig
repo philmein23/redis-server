@@ -40,6 +40,7 @@ pub const ServerState = struct {
     master_port: ?u16 = null,
     port: u16 = 6379,
     allocator: std.mem.Allocator,
+    cmd_bytes_count: ?usize = null,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {
         return .{ .replicas = undefined, .allocator = allocator };

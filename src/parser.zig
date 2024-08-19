@@ -228,6 +228,15 @@ pub const Parser = struct {
             };
         }
 
+        if (self.peek() == '0') {
+            self.next();
+            return Arg{
+                .loc = Loc{ .start = self.curr_index, .end = self.curr_index },
+                .tag = undefined,
+                .content = "*",
+            };
+        }
+
         if (std.ascii.isAlphanumeric(self.peek())) {
             self.next();
             var arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
