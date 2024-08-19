@@ -195,7 +195,18 @@ fn handle_connection(
                     state,
                 ),
                 Tag.replconf => {
-                    _ = try stream.write("+OK\r\n");
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
+                        _ = try stream.write("+OK\r\n");
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
+                        switch (state.role) {
+                            .master => try state.forward_cmd(bytes_slice),
+                            .slave => {
+                                _ = try stream.write("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n");
+                            },
+                        }
+                    }
                 },
                 Tag.psync => {
                     try handle_psync(
