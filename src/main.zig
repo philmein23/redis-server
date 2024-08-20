@@ -121,7 +121,7 @@ fn handle_connection(
         std.debug.print("Closing connection....", .{});
     }
 
-    var buffer: [100:0]u8 = undefined;
+    var buffer: [512:0]u8 = undefined;
     const reader = stream.reader();
 
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -142,7 +142,7 @@ fn handle_connection(
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print(
-            "COMMANDS:{s}\n",
+            "COMMANDS:{s}.......\n",
             .{bytes_slice},
         );
 
@@ -173,8 +173,12 @@ fn handle_connection(
                 Tag.ping => {
                     switch (state.role) {
                         .master => {
-                            _ = try stream.write("+PONG\r\n");
+                            std.debug.print(
+                                "FORWARD PING:{s}.......\n",
+                                .{bytes_slice},
+                            );
                             try state.forward_cmd(bytes_slice);
+                            _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
@@ -192,8 +196,12 @@ fn handle_connection(
 
                     switch (state.role) {
                         .master => {
-                            _ = try stream.write("+OK\r\n");
+                            std.debug.print(
+                                "FORWARD SET:{s}.......\n",
+                                .{bytes_slice},
+                            );
                             try state.forward_cmd(bytes_slice);
+                            _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
@@ -221,7 +229,10 @@ fn handle_connection(
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
                         switch (state.role) {
                             .master => {
-                                _ = try stream.write("+OK\r\n");
+                                std.debug.print(
+                                    "FORWARD ACK:{s}.......\n",
+                                    .{bytes_slice},
+                                );
                                 try state.forward_cmd(bytes_slice);
                             },
                             .slave => {
@@ -369,7 +380,12 @@ fn handle_handshake(state: *ServerState, allocator: std.mem.Allocator) !std.net.
 
     var replica_writer = replica_stream.writer();
     const ping_resp = "*1\r\n$4\r\nPING\r\n";
+
     _ = try replica_writer.write(ping_resp);
+    std.debug.print(
+        "FORWARD PING HANDSHAKE:{s}.......\n",
+        .{ping_resp},
+    );
 
     var buffer: [1024:0]u8 = undefined;
     _ = try replica_stream.read(&buffer); // master responds w/ +PONG

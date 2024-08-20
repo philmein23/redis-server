@@ -24,7 +24,7 @@ pub const Parser = struct {
         }
         while (self.peek() != 0) {
             var cmd = try self.parse();
-            cmd.byte_count = self.byte_count + 1;
+            cmd.byte_count = self.byte_count;
 
             try cmds.append(cmd);
 
@@ -38,6 +38,8 @@ pub const Parser = struct {
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
 
+        self.byte_count += 1; // always count the first byte regardless of its type
+        //
         if (self.peek() == '*') {
             self.next();
         }
