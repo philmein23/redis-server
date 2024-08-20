@@ -173,16 +173,15 @@ fn handle_connection(
                 Tag.ping => {
                     switch (state.role) {
                         .master => {
+                            _ = try stream.write("+PONG\r\n");
                             try state.forward_cmd(bytes_slice);
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
-                                state.cmd_bytes_count = state.cmd_bytes_count.? + bytes_read;
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
                             }
-                            return;
                         },
                     }
-                    _ = try stream.write("+PONG\r\n");
                 },
                 Tag.set => {
                     if (opt != null) {
@@ -191,9 +190,16 @@ fn handle_connection(
                         try store.set(cmd.args[0].content, cmd.args[1].content, null);
                     }
 
-                    if (state.role == .master) {
-                        _ = try stream.write("+OK\r\n");
-                        try state.forward_cmd(bytes_slice);
+                    switch (state.role) {
+                        .master => {
+                            _ = try stream.write("+OK\r\n");
+                            try state.forward_cmd(bytes_slice);
+                        },
+                        .slave => {
+                            if (state.cmd_bytes_count != null) {
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                            }
+                        },
                     }
                 },
                 Tag.get => try handle_get(
@@ -223,13 +229,16 @@ fn handle_connection(
                                     state.cmd_bytes_count = 0;
                                 }
 
-                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n{?d}\r\n", .{state.cmd_bytes_count});
+                                const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
+                                defer allocator.free(digit_to_bytes);
+
+                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
                                 defer allocator.free(resp);
 
-                                const bytes_count = try stream.write(resp);
+                                _ = try stream.write(resp);
 
-                                std.debug.print("UPDATE COUNT cmd_byte_count {}, bytes_count {}", .{ state.cmd_bytes_count.?, bytes_count });
-                                state.cmd_bytes_count = state.cmd_bytes_count.? + bytes_count;
+                                std.debug.print("UPDATE COUNT cmd_byte_count {}, bytes_read {}", .{ state.cmd_bytes_count.?, cmd.byte_count });
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
 
                                 get_ack_count += 1;
                             },

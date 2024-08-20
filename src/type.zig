@@ -3,7 +3,7 @@ const rand = std.crypto.random;
 const net = std.net;
 pub const Loc = struct { start: usize, end: usize };
 pub const Tag = enum { echo, ping, set, get, info, replconf, psync };
-pub const Command = struct { loc: Loc, tag: Tag, args: [3]Arg, opt: ?Arg = null };
+pub const Command = struct { loc: Loc, tag: Tag, args: [3]Arg, opt: ?Arg = null, byte_count: usize = 0 };
 pub const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 pub const Role = enum { master, slave };
 

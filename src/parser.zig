@@ -9,6 +9,7 @@ pub const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
     allocator: std.mem.Allocator,
+    byte_count: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator, buffer: [:0]const u8) Parser {
         return Parser{ .buffer = buffer, .curr_index = 0, .allocator = allocator };
@@ -22,9 +23,12 @@ pub const Parser = struct {
             cmds.deinit();
         }
         while (self.peek() != 0) {
-            const cmd = try self.parse();
+            var cmd = try self.parse();
+            cmd.byte_count = self.byte_count + 1;
 
             try cmds.append(cmd);
+
+            self.byte_count = 0; // reset
         }
 
         return cmds;
@@ -151,11 +155,11 @@ pub const Parser = struct {
                 while (std.ascii.isASCII(self.peek()) and self.peek() != 0) {
                     const arg = try self.parse_string();
 
+                    try self.expect_return_new_line_bytes();
+
                     command.args[i] = arg;
 
                     i += 1;
-
-                    try self.expect_return_new_line_bytes();
                 }
 
                 return command;
@@ -267,6 +271,8 @@ pub const Parser = struct {
     }
     fn next(self: *Parser) void {
         self.curr_index += 1;
+
+        self.byte_count += 1;
     }
     fn peek(self: *Parser) u8 {
         return self.buffer[self.curr_index + 1];
