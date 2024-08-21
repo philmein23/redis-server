@@ -5,6 +5,7 @@ const Tag = @import("type.zig").Tag;
 const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
+// TODO: Refactor Parser: break this up to coverting buffer stream into Tokens then using an updated Parser covert to Command representation.
 pub const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
@@ -38,10 +39,11 @@ pub const Parser = struct {
         var command = Command{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .args = undefined };
         // bytes sent from client ex: "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n"
 
-        self.byte_count += 1; // always count the first byte regardless of its type
-        //
         if (self.peek() == '*') {
             self.next();
+        } else {
+            // always count the first byte regardless of its type
+            self.byte_count += 1;
         }
 
         while (std.ascii.isDigit(self.peek())) {
@@ -239,7 +241,7 @@ pub const Parser = struct {
             return Arg{
                 .loc = Loc{ .start = self.curr_index, .end = self.curr_index },
                 .tag = undefined,
-                .content = "*",
+                .content = "0",
             };
         }
 
@@ -276,6 +278,7 @@ pub const Parser = struct {
 
         self.byte_count += 1;
     }
+
     fn peek(self: *Parser) u8 {
         return self.buffer[self.curr_index + 1];
     }

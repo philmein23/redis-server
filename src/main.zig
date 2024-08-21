@@ -173,16 +173,15 @@ fn handle_connection(
                 Tag.ping => {
                     switch (state.role) {
                         .master => {
-                            std.debug.print(
-                                "FORWARD PING:{s}.......\n",
-                                .{bytes_slice},
-                            );
-                            try state.forward_cmd(bytes_slice);
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
+                                const before_cmd_byte_count = state.cmd_bytes_count.?;
+
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+
+                                std.debug.print("AFTER: UPDATE COUNT (PING)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
                             }
                         },
                     }
@@ -205,7 +204,11 @@ fn handle_connection(
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
+                                const before_cmd_byte_count = state.cmd_bytes_count.?;
+
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+
+                                std.debug.print("AFTER: UPDATE COUNT (SET)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
                             }
                         },
                     }
@@ -248,8 +251,11 @@ fn handle_connection(
 
                                 _ = try stream.write(resp);
 
-                                std.debug.print("UPDATE COUNT cmd_byte_count {}, bytes_read {}", .{ state.cmd_bytes_count.?, cmd.byte_count });
+                                const before_cmd_byte_count = state.cmd_bytes_count.?;
+
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+
+                                std.debug.print("AFTER: UPDATE COUNT (GETACK)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
 
                                 get_ack_count += 1;
                             },
