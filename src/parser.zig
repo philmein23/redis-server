@@ -104,6 +104,10 @@ pub const Parser = struct {
             if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "psync")) |_| {
                 command.tag = Tag.psync;
             }
+
+            if (std.ascii.indexOfIgnoreCase(self.buffer[command.loc.start .. command.loc.end + 1], "wait")) |_| {
+                command.tag = Tag.wait;
+            }
         }
 
         try self.expect_return_new_line_bytes();
@@ -165,6 +169,17 @@ pub const Parser = struct {
 
                     i += 1;
                 }
+
+                return command;
+            },
+            Tag.wait => {
+                command.args[0] = try self.parse_string();
+
+                try self.expect_return_new_line_bytes();
+
+                command.args[1] = try self.parse_string();
+
+                try self.expect_return_new_line_bytes();
 
                 return command;
             },
@@ -236,15 +251,6 @@ pub const Parser = struct {
             };
         }
 
-        if (self.peek() == '0') {
-            self.next();
-            return Arg{
-                .loc = Loc{ .start = self.curr_index, .end = self.curr_index },
-                .tag = undefined,
-                .content = "0",
-            };
-        }
-
         if (std.ascii.isAlphanumeric(self.peek())) {
             self.next();
             var arg = Arg{ .loc = Loc{ .start = undefined, .end = undefined }, .tag = undefined, .content = undefined };
@@ -262,6 +268,8 @@ pub const Parser = struct {
 
                     continue;
                 } else {
+                    arg.loc.end = self.curr_index;
+
                     break;
                 }
             }
@@ -298,6 +306,19 @@ pub const Parser = struct {
     }
 };
 
+test "test WAIT" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+    const bytes = "*3\r\n$4\r\nWAIT\r\n$1\r\n5\r\n$3\r\n500\r\n";
+    var parser = Parser.init(allocator, bytes);
+    const command = try parser.parse();
+    try std.testing.expectEqual(Tag.wait, command.tag);
+    try std.testing.expectEqualSlices(u8, "5", command.args[0].content);
+    try std.testing.expectEqualSlices(u8, "500", command.args[1].content);
+}
+
 test "test PSYNC" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -331,6 +352,15 @@ test "test REPLCONF" {
     try std.testing.expectEqual(Tag.replconf, command_two.tag);
     try std.testing.expectEqualSlices(u8, "GETACK", command_two.args[0].content);
     try std.testing.expectEqualSlices(u8, "*", command_two.args[1].content);
+
+    const bytes_three = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n";
+
+    var parser_three = Parser.init(allocator, bytes_three);
+    const command_three = try parser_three.parse();
+
+    try std.testing.expectEqual(Tag.replconf, command_three.tag);
+    try std.testing.expectEqualSlices(u8, "ACK", command_three.args[0].content);
+    try std.testing.expectEqualSlices(u8, "0", command_three.args[1].content);
 }
 
 test "test SET with expiry opt" {

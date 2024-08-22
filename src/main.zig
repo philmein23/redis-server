@@ -177,11 +177,7 @@ fn handle_connection(
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
-                                const before_cmd_byte_count = state.cmd_bytes_count.?;
-
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-
-                                std.debug.print("AFTER: UPDATE COUNT (PING)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
                             }
                         },
                     }
@@ -195,20 +191,12 @@ fn handle_connection(
 
                     switch (state.role) {
                         .master => {
-                            std.debug.print(
-                                "FORWARD SET:{s}.......\n",
-                                .{bytes_slice},
-                            );
                             try state.forward_cmd(bytes_slice);
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
-                                const before_cmd_byte_count = state.cmd_bytes_count.?;
-
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-
-                                std.debug.print("AFTER: UPDATE COUNT (SET)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
                             }
                         },
                     }
@@ -224,6 +212,18 @@ fn handle_connection(
                     allocator,
                     state,
                 ),
+                Tag.wait => {
+                    const num_of_replicas = cmd.args[0];
+                    // const block_until = cmd.args[1];
+
+                    // const delay_ms = 500;
+                    // std.time.sleep(delay_ms * std.time.ns_per_ms);
+
+                    const resp = try std.fmt.allocPrint(allocator, ":{}\r\n", .{num_of_replicas});
+                    defer allocator.free(resp);
+
+                    _ = try stream.write(resp);
+                },
                 Tag.replconf => {
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
                         _ = try stream.write("+OK\r\n");
@@ -232,10 +232,6 @@ fn handle_connection(
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
                         switch (state.role) {
                             .master => {
-                                std.debug.print(
-                                    "FORWARD ACK:{s}.......\n",
-                                    .{bytes_slice},
-                                );
                                 try state.forward_cmd(bytes_slice);
                             },
                             .slave => {
@@ -251,11 +247,7 @@ fn handle_connection(
 
                                 _ = try stream.write(resp);
 
-                                const before_cmd_byte_count = state.cmd_bytes_count.?;
-
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-
-                                std.debug.print("AFTER: UPDATE COUNT (GETACK)\n Before cmd_byte_count: {}\n, Updated cmd_byte_count {}\n, bytes_read {}\n", .{ before_cmd_byte_count, state.cmd_bytes_count.?, cmd.byte_count });
 
                                 get_ack_count += 1;
                             },
