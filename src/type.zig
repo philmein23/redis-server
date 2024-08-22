@@ -21,9 +21,18 @@ pub const Role = enum { master, slave };
 //
 pub const Replica = struct {
     stream: net.Stream,
+    allocator: std.mem.Allocator,
 
-    pub fn init(stream: net.Stream) Replica {
-        return .{ .stream = stream };
+    pub fn init(allocator: std.mem.Allocator, stream: net.Stream) !*Replica {
+        const replica = try allocator.create(Replica);
+        replica.stream = stream;
+        replica.allocator = allocator;
+
+        return replica;
+    }
+
+    pub fn destroy(self: *Replica) void {
+        self.allocator.destroy(self);
     }
 
     pub fn write(self: *Replica, cmd_buf: []const u8) !void {
@@ -32,7 +41,7 @@ pub const Replica = struct {
 };
 
 pub const ServerState = struct {
-    replicas: [10]Replica, // should probably turn this into an array list
+    replicas: std.ArrayList(*Replica), // need to figure out a way to not allocate mmeory when the role is 'slave'
     role: Role = .master,
     replication_id: ?[]u8 = null,
     replica_count: u8 = 0,
@@ -43,13 +52,19 @@ pub const ServerState = struct {
     cmd_bytes_count: ?usize = null,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {
-        return .{ .replicas = undefined, .allocator = allocator };
+        return .{ .allocator = allocator, .replicas = std.ArrayList(*Replica).init(allocator) };
     }
 
-    pub fn deinit(self: *ServerState) !void {
+    pub fn deinit(self: *ServerState) void {
         if (self.replication_id != null) {
             self.allocator.free(self.replication_id.?);
         }
+
+        for (self.replicas.items) |replica| {
+            replica.destroy();
+        }
+
+        self.replicas.deinit();
     }
 
     pub fn generate_master_replication_id(self: *ServerState) !void {
@@ -68,14 +83,13 @@ pub const ServerState = struct {
     }
 
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
-        for (0..self.replica_count) |i| {
-            try self.replicas[i].write(cmd_buf);
+        for (self.replicas.items) |replica| {
+            try replica.write(cmd_buf);
         }
     }
 
-    pub fn add_replica(self: *ServerState, stream: net.Stream) void {
-        self.replicas[self.replica_count] = Replica.init(stream);
-
-        self.replica_count += 1;
+    pub fn add_replica(self: *ServerState, stream: net.Stream) !void {
+        const rep_ptr = try Replica.init(self.allocator, stream);
+        try self.replicas.append(rep_ptr);
     }
 };

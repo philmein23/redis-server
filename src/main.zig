@@ -213,13 +213,14 @@ fn handle_connection(
                     state,
                 ),
                 Tag.wait => {
-                    const num_of_replicas = cmd.args[0].content;
+                    _ = try std.fmt.parseInt(usize, cmd.args[0].content, 10);
+
                     // const block_until = cmd.args[1];
 
                     // const delay_ms = 500;
                     // std.time.sleep(delay_ms * std.time.ns_per_ms);
 
-                    const resp = try std.fmt.allocPrint(allocator, ":{s}\r\n", .{num_of_replicas});
+                    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{state.replicas.items.len});
                     defer allocator.free(resp);
 
                     _ = try stream.write(resp);
@@ -262,7 +263,7 @@ fn handle_connection(
                         &cmd.args,
                     );
 
-                    state.add_replica(stream);
+                    try state.add_replica(stream);
                 },
             }
         }
@@ -277,6 +278,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
     var state = ServerState.init(allocator);
+    defer state.deinit();
 
     try handle_args(&state);
 
@@ -294,8 +296,11 @@ pub fn main() !void {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    // const T1 = struct { fd: [5]u8 };
-    // std.debug.print("TEST ALIGNOF: {}", .{@alignOf(T1)});
+    const T1 = struct { fd: [5]u8 };
+    const t = T1{ .fd = undefined };
+    std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
+    std.debug.print("T1 Var address: {*}\n", .{&t});
+    std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);
@@ -380,10 +385,6 @@ fn handle_handshake(state: *ServerState, allocator: std.mem.Allocator) !std.net.
     const ping_resp = "*1\r\n$4\r\nPING\r\n";
 
     _ = try replica_writer.write(ping_resp);
-    std.debug.print(
-        "FORWARD PING HANDSHAKE:{s}.......\n",
-        .{ping_resp},
-    );
 
     var buffer: [1024:0]u8 = undefined;
     _ = try replica_stream.read(&buffer); // master responds w/ +PONG
