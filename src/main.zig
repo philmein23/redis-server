@@ -104,10 +104,7 @@ fn handle_psync(
         "${d}\r\n{s}",
         .{ decoded_length, decoded_buffer },
     );
-    std.debug.print("Decoded length: {d}, decoded buffer: {any}\n", .{
-        decoded_length,
-        decoded_buffer,
-    });
+
     defer allocator.free(rdb_resp);
     _ = try stream.write(rdb_resp);
 }
@@ -124,7 +121,7 @@ fn handle_connection(
         std.debug.print("Closing connection....", .{});
     }
 
-    var buffer: [100:0]u8 = undefined;
+    var buffer: [512:0]u8 = undefined;
     const reader = stream.reader();
 
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -133,6 +130,8 @@ fn handle_connection(
     //
     var bytes = std.ArrayList(u8).init(allocator);
     defer bytes.deinit();
+
+    var get_ack_count: usize = 0;
 
     while (true) {
         const bytes_read = try reader.read(&buffer);
@@ -143,7 +142,7 @@ fn handle_connection(
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print(
-            "COMMANDS:{s}\n",
+            "COMMANDS:{s}.......\n",
             .{bytes_slice},
         );
 
@@ -172,7 +171,16 @@ fn handle_connection(
                     _ = try stream.write(resp);
                 },
                 Tag.ping => {
-                    _ = try stream.write("+PONG\r\n");
+                    switch (state.role) {
+                        .master => {
+                            _ = try stream.write("+PONG\r\n");
+                        },
+                        .slave => {
+                            if (state.cmd_bytes_count != null) {
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                            }
+                        },
+                    }
                 },
                 Tag.set => {
                     if (opt != null) {
@@ -181,9 +189,16 @@ fn handle_connection(
                         try store.set(cmd.args[0].content, cmd.args[1].content, null);
                     }
 
-                    if (state.role == .master) {
-                        _ = try stream.write("+OK\r\n");
-                        try state.forward_cmd(bytes_slice);
+                    switch (state.role) {
+                        .master => {
+                            try state.forward_cmd(bytes_slice);
+                            _ = try stream.write("+OK\r\n");
+                        },
+                        .slave => {
+                            if (state.cmd_bytes_count != null) {
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                            }
+                        },
                     }
                 },
                 Tag.get => try handle_get(
@@ -197,8 +212,48 @@ fn handle_connection(
                     allocator,
                     state,
                 ),
+                Tag.wait => {
+                    _ = try std.fmt.parseInt(usize, cmd.args[0].content, 10);
+
+                    // const block_until = cmd.args[1];
+
+                    // const delay_ms = 500;
+                    // std.time.sleep(delay_ms * std.time.ns_per_ms);
+
+                    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{state.replicas.items.len});
+                    defer allocator.free(resp);
+
+                    _ = try stream.write(resp);
+                },
                 Tag.replconf => {
-                    _ = try stream.write("+OK\r\n");
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
+                        _ = try stream.write("+OK\r\n");
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
+                        switch (state.role) {
+                            .master => {
+                                try state.forward_cmd(bytes_slice);
+                            },
+                            .slave => {
+                                if (get_ack_count == 0) {
+                                    state.cmd_bytes_count = 0;
+                                }
+
+                                const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
+                                defer allocator.free(digit_to_bytes);
+
+                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
+                                defer allocator.free(resp);
+
+                                _ = try stream.write(resp);
+
+                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+
+                                get_ack_count += 1;
+                            },
+                        }
+                    }
                 },
                 Tag.psync => {
                     try handle_psync(
@@ -208,7 +263,7 @@ fn handle_connection(
                         &cmd.args,
                     );
 
-                    state.add_replica(stream);
+                    try state.add_replica(stream);
                 },
             }
         }
@@ -223,6 +278,7 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
     var state = ServerState.init(allocator);
+    defer state.deinit();
 
     try handle_args(&state);
 
@@ -240,8 +296,11 @@ pub fn main() !void {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    // const T1 = struct { fd: [5]u8 };
-    // std.debug.print("TEST ALIGNOF: {}", .{@alignOf(T1)});
+    const T1 = struct { fd: [5]u8 };
+    const t = T1{ .fd = undefined };
+    std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
+    std.debug.print("T1 Var address: {*}\n", .{&t});
+    std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);
@@ -264,6 +323,7 @@ pub fn main() !void {
         const client_connection = try server.accept();
         try stdout.print("Connection received {} is sending data..\n", .{client_connection.address});
 
+        std.debug.print("CONNECTION RECEIVED- ROLE: {any}", .{state.role});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,
@@ -323,6 +383,7 @@ fn handle_handshake(state: *ServerState, allocator: std.mem.Allocator) !std.net.
 
     var replica_writer = replica_stream.writer();
     const ping_resp = "*1\r\n$4\r\nPING\r\n";
+
     _ = try replica_writer.write(ping_resp);
 
     var buffer: [1024:0]u8 = undefined;
