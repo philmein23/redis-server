@@ -213,13 +213,13 @@ fn handle_connection(
                     state,
                 ),
                 Tag.wait => {
-                    const num_of_replicas = cmd.args[0];
+                    const num_of_replicas = cmd.args[0].content;
                     // const block_until = cmd.args[1];
 
                     // const delay_ms = 500;
                     // std.time.sleep(delay_ms * std.time.ns_per_ms);
 
-                    const resp = try std.fmt.allocPrint(allocator, ":{}\r\n", .{num_of_replicas});
+                    const resp = try std.fmt.allocPrint(allocator, ":{s}\r\n", .{num_of_replicas});
                     defer allocator.free(resp);
 
                     _ = try stream.write(resp);
