@@ -22,11 +22,13 @@ pub const Role = enum { master, slave };
 pub const Replica = struct {
     stream: net.Stream,
     allocator: std.mem.Allocator,
+    offset: usize,
 
     pub fn init(allocator: std.mem.Allocator, stream: net.Stream) !*Replica {
         const replica = try allocator.create(Replica);
         replica.stream = stream;
         replica.allocator = allocator;
+        replica.offset = 0;
 
         return replica;
     }
@@ -37,6 +39,8 @@ pub const Replica = struct {
 
     pub fn write(self: *Replica, cmd_buf: []const u8) !void {
         _ = try self.stream.write(cmd_buf);
+
+        self.offset += cmd_buf.len;
     }
 };
 
@@ -44,12 +48,12 @@ pub const ServerState = struct {
     replicas: std.ArrayList(*Replica), // TODO: need to figure out a way to not allocate mmeory when the role is 'slave'
     role: Role = .master,
     replication_id: ?[]u8 = null,
-    replica_count: u8 = 0,
     master_host: ?[]const u8 = null,
     master_port: ?u16 = null,
     port: u16 = 6379,
     allocator: std.mem.Allocator,
     cmd_bytes_count: ?usize = null,
+    offset: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {
         return .{ .allocator = allocator, .replicas = std.ArrayList(*Replica).init(allocator) };

@@ -109,6 +109,49 @@ fn handle_psync(
     _ = try stream.write(rdb_resp);
 }
 
+fn handle_wait(
+    allocator: std.mem.Allocator,
+    stream: net.Stream,
+    state: *ServerState,
+    args: []const Arg,
+) !void {
+    const num_replicas_to_ack = try std.fmt.parseInt(usize, args[0].content, 10);
+    const block_until = try std.fmt.parseInt(i64, args[1].content, 10);
+
+    var now = std.time.milliTimestamp();
+    const to_expire_at = now + block_until;
+
+    const get_ack_cmd = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+    try state.forward_cmd(get_ack_cmd);
+
+    var num_replicas_acked: usize = 0;
+    while (now < to_expire_at) {
+        for (state.replicas.items) |replica| {
+            if (replica.offset >= state.offset) {
+                std.debug.print("REPLICA OFFSET: {}, MASTER OFFSET: {}", .{ replica.offset, state.offset });
+                num_replicas_acked += 1;
+            }
+            if (num_replicas_acked == num_replicas_to_ack) {
+                const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{num_replicas_acked});
+                defer allocator.free(resp);
+
+                _ = try stream.write(resp);
+                return;
+            }
+        }
+
+        // Add a small delay to allow 'now' timestamp to increment
+        std.time.sleep(100 * std.time.ns_per_ms);
+
+        now = std.time.milliTimestamp();
+    }
+
+    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{num_replicas_acked});
+    defer allocator.free(resp);
+
+    _ = try stream.write(resp);
+}
+
 fn handle_connection(
     stream: net.Stream,
     stdout: anytype,
@@ -198,8 +241,9 @@ fn handle_connection(
 
                     switch (state.role) {
                         .master => {
-                            std.debug.print("SET- MASTER FORWARD {s}\n", .{bytes_slice});
                             try state.forward_cmd(bytes_slice);
+                            state.offset += bytes_slice.len;
+
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
@@ -222,42 +266,7 @@ fn handle_connection(
                     state,
                 ),
                 Tag.wait => {
-                    const num_replicas_ack = try std.fmt.parseInt(usize, cmd.args[0].content, 10);
-                    const block_until = try std.fmt.parseInt(i64, cmd.args[1].content, 10);
-
-                    var now = std.time.milliTimestamp();
-                    const to_expire_at = now + block_until;
-                    var reps_count_returned: usize = state.replicas.items.len;
-
-                    const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
-                    try state.forward_cmd(get_ack_cmd);
-
-                    while (now < to_expire_at) {
-                        std.debug.print("BEFORE NOW: {}, EXPIRE_AT: {}\n", .{ now, to_expire_at });
-
-                        if (num_replicas_ack == state.replicas.items.len) {
-                            std.debug.print("REPLICAS ACK\n", .{});
-                            reps_count_returned = num_replicas_ack;
-                            const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{reps_count_returned});
-                            defer allocator.free(resp);
-
-                            _ = try stream.write(resp);
-                            break;
-                        }
-
-                        // Add a small delay to allow 'now' timestamp to increment
-                        std.time.sleep(100 * std.time.ns_per_ms);
-
-                        now = std.time.milliTimestamp();
-                        std.debug.print("AFTER NOW: {}, EXPIRE_AT: {}\n", .{ now, to_expire_at });
-                    }
-
-                    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{reps_count_returned});
-                    defer allocator.free(resp);
-
-                    _ = try stream.write(resp);
-                    std.debug.print("AFTER WRITE: {}\n", .{reps_count_returned});
-                    return;
+                    try handle_wait(allocator, stream, state, &cmd.args);
                 },
                 Tag.replconf => {
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
@@ -275,8 +284,6 @@ fn handle_connection(
                                 if (get_ack_count == 0) {
                                     state.cmd_bytes_count = 0;
                                 }
-                                std.debug.print("BEFORE REPLICA ACK\n", .{});
-
                                 const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
                                 defer allocator.free(digit_to_bytes);
 
