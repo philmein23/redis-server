@@ -128,7 +128,6 @@ fn handle_wait(
     while (now < to_expire_at) {
         for (state.replicas.items) |replica| {
             if (replica.offset >= state.offset) {
-                std.debug.print("REPLICA OFFSET: {}, MASTER OFFSET: {}", .{ replica.offset, state.offset });
                 num_replicas_acked += 1;
             }
             if (num_replicas_acked == num_replicas_to_ack) {
@@ -227,6 +226,7 @@ fn handle_connection(
                         },
                         .slave => {
                             if (state.cmd_bytes_count != null) {
+                                // TODO: use replica offset field instead
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
                             }
                         },
@@ -276,7 +276,6 @@ fn handle_connection(
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.mem.eql(u8, cmd.args[1].content, "*")) {
                         switch (state.role) {
                             .master => {
-                                std.debug.print("MASTER FORWARDING GETACK\n", .{});
                                 const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
                                 try state.forward_cmd(get_ack_cmd);
                             },
@@ -290,7 +289,6 @@ fn handle_connection(
                                 const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
                                 defer allocator.free(resp);
 
-                                std.debug.print("AFTER REPLICA ACK\n", .{});
                                 _ = try stream.write(resp);
 
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
@@ -300,7 +298,6 @@ fn handle_connection(
                         }
                     }
                 },
-                // is there a way to bypass the connectionresetbypeer error above?
                 Tag.psync => {
                     try handle_psync(
                         allocator,
