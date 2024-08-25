@@ -301,8 +301,6 @@ fn handle_connection(
                     }
 
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "ack")) {
-                        std.debug.print("ACK!!\n", .{});
-
                         if (state.replicas_2.get(stream.handle)) |replica| {
                             replica.*.offset += try std.fmt.parseInt(usize, cmd.args[1].content, 10);
                         }
