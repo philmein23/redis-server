@@ -121,7 +121,7 @@ fn handle_connection(
         std.debug.print("Closing connection....", .{});
     }
 
-    var buffer: [512:0]u8 = undefined;
+    var buffer: [1024:0]u8 = undefined;
     const reader = stream.reader();
 
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -134,16 +134,23 @@ fn handle_connection(
     var get_ack_count: usize = 0;
 
     while (true) {
-        const bytes_read = try reader.read(&buffer);
+        std.debug.print("ABOUT TO READ - ROLE: {any}\n", .{state.role});
+        const bytes_read = reader.read(&buffer) catch |err| switch (err) {
+            error.ConnectionResetByPeer => {
+                std.debug.print("CONNECTION RESET BY PEER ERROR - THREAD ID: {any}\n", .{std.Thread.getCurrentId()});
 
+                return err;
+            },
+            else => |e| return e,
+        };
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
         std.debug.print(
-            "COMMANDS:{s}.......\n",
-            .{bytes_slice},
+            "COMMANDS:{s}, Thread ID {any}\n",
+            .{ bytes_slice, std.Thread.getCurrentId() },
         );
 
         try stdout.print("Connection received, buffer being read into...\n", .{});
@@ -191,10 +198,12 @@ fn handle_connection(
 
                     switch (state.role) {
                         .master => {
+                            std.debug.print("SET- MASTER FORWARD {s}\n", .{bytes_slice});
                             try state.forward_cmd(bytes_slice);
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
+                            std.debug.print("SET- SLAVE {s}\n", .{bytes_slice});
                             if (state.cmd_bytes_count != null) {
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
                             }
@@ -213,32 +222,60 @@ fn handle_connection(
                     state,
                 ),
                 Tag.wait => {
-                    _ = try std.fmt.parseInt(usize, cmd.args[0].content, 10);
+                    const num_replicas_ack = try std.fmt.parseInt(usize, cmd.args[0].content, 10);
+                    const block_until = try std.fmt.parseInt(i64, cmd.args[1].content, 10);
 
-                    // const block_until = cmd.args[1];
+                    var now = std.time.milliTimestamp();
+                    const to_expire_at = now + block_until;
+                    var reps_count_returned: usize = state.replicas.items.len;
 
-                    // const delay_ms = 500;
-                    // std.time.sleep(delay_ms * std.time.ns_per_ms);
+                    const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+                    try state.forward_cmd(get_ack_cmd);
 
-                    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{state.replicas.items.len});
+                    while (now < to_expire_at) {
+                        std.debug.print("BEFORE NOW: {}, EXPIRE_AT: {}\n", .{ now, to_expire_at });
+
+                        if (num_replicas_ack == state.replicas.items.len) {
+                            std.debug.print("REPLICAS ACK\n", .{});
+                            reps_count_returned = num_replicas_ack;
+                            const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{reps_count_returned});
+                            defer allocator.free(resp);
+
+                            _ = try stream.write(resp);
+                            break;
+                        }
+
+                        // Add a small delay to allow 'now' timestamp to increment
+                        std.time.sleep(100 * std.time.ns_per_ms);
+
+                        now = std.time.milliTimestamp();
+                        std.debug.print("AFTER NOW: {}, EXPIRE_AT: {}\n", .{ now, to_expire_at });
+                    }
+
+                    const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{reps_count_returned});
                     defer allocator.free(resp);
 
                     _ = try stream.write(resp);
+                    std.debug.print("AFTER WRITE: {}\n", .{reps_count_returned});
+                    return;
                 },
                 Tag.replconf => {
                     if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
                         _ = try stream.write("+OK\r\n");
                     }
 
-                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.ascii.eqlIgnoreCase(cmd.args[1].content, "*")) {
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.mem.eql(u8, cmd.args[1].content, "*")) {
                         switch (state.role) {
                             .master => {
-                                try state.forward_cmd(bytes_slice);
+                                std.debug.print("MASTER FORWARDING GETACK\n", .{});
+                                const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
+                                try state.forward_cmd(get_ack_cmd);
                             },
                             .slave => {
                                 if (get_ack_count == 0) {
                                     state.cmd_bytes_count = 0;
                                 }
+                                std.debug.print("BEFORE REPLICA ACK\n", .{});
 
                                 const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
                                 defer allocator.free(digit_to_bytes);
@@ -246,6 +283,7 @@ fn handle_connection(
                                 const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
                                 defer allocator.free(resp);
 
+                                std.debug.print("AFTER REPLICA ACK\n", .{});
                                 _ = try stream.write(resp);
 
                                 state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
@@ -255,6 +293,7 @@ fn handle_connection(
                         }
                     }
                 },
+                // is there a way to bypass the connectionresetbypeer error above?
                 Tag.psync => {
                     try handle_psync(
                         allocator,
@@ -296,11 +335,11 @@ pub fn main() !void {
     var store = RedisStore.init(allocator);
     defer store.deinit();
 
-    const T1 = struct { fd: [5]u8 };
-    const t = T1{ .fd = undefined };
-    std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
-    std.debug.print("T1 Var address: {*}\n", .{&t});
-    std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
+    // const T1 = struct { fd: [5]u8 };
+    // const t = T1{ .fd = undefined };
+    // std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
+    // std.debug.print("T1 Var address: {*}\n", .{&t});
+    // std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);
@@ -323,7 +362,6 @@ pub fn main() !void {
         const client_connection = try server.accept();
         try stdout.print("Connection received {} is sending data..\n", .{client_connection.address});
 
-        std.debug.print("CONNECTION RECEIVED- ROLE: {any}", .{state.role});
         const thread = try std.Thread.spawn(
             .{},
             handle_connection,

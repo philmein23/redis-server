@@ -314,7 +314,7 @@ test "test WAIT" {
     const bytes = "*3\r\n$4\r\nWAIT\r\n$1\r\n5\r\n$3\r\n500\r\n";
     var parser = Parser.init(allocator, bytes);
     const command = try parser.parse();
-    try std.testing.expectEqual(Tag.wait, command.tag);
+    try std.testing.expectEqual(Tag.psync, command.tag);
     try std.testing.expectEqualSlices(u8, "5", command.args[0].content);
     try std.testing.expectEqualSlices(u8, "500", command.args[1].content);
 }

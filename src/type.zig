@@ -41,7 +41,7 @@ pub const Replica = struct {
 };
 
 pub const ServerState = struct {
-    replicas: std.ArrayList(*Replica), // need to figure out a way to not allocate mmeory when the role is 'slave'
+    replicas: std.ArrayList(*Replica), // TODO: need to figure out a way to not allocate mmeory when the role is 'slave'
     role: Role = .master,
     replication_id: ?[]u8 = null,
     replica_count: u8 = 0,
