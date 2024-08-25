@@ -39,13 +39,12 @@ pub const Replica = struct {
 
     pub fn write(self: *Replica, cmd_buf: []const u8) !void {
         _ = try self.stream.write(cmd_buf);
-
-        self.offset += cmd_buf.len;
     }
 };
 
 pub const ServerState = struct {
     replicas: std.ArrayList(*Replica), // TODO: need to figure out a way to not allocate mmeory when the role is 'slave'
+    replicas_2: std.AutoHashMap(std.posix.fd_t, *Replica),
     role: Role = .master,
     replication_id: ?[]u8 = null,
     master_host: ?[]const u8 = null,
@@ -56,7 +55,8 @@ pub const ServerState = struct {
     offset: usize = 0,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {
-        return .{ .allocator = allocator, .replicas = std.ArrayList(*Replica).init(allocator) };
+        const replicas_2 = std.AutoHashMap(std.posix.fd_t, *Replica).init(allocator);
+        return .{ .allocator = allocator, .replicas = std.ArrayList(*Replica).init(allocator), .replicas_2 = replicas_2 };
     }
 
     pub fn deinit(self: *ServerState) void {
@@ -67,6 +67,8 @@ pub const ServerState = struct {
         for (self.replicas.items) |replica| {
             replica.destroy();
         }
+
+        self.replicas_2.deinit();
 
         self.replicas.deinit();
     }
@@ -92,8 +94,20 @@ pub const ServerState = struct {
         }
     }
 
+    pub fn forward_cmd_2(self: *ServerState, cmd_buf: []const u8) !void {
+        var iter = self.replicas_2.valueIterator();
+        while (iter.next()) |replica_ptr| {
+            try replica_ptr.*.write(cmd_buf);
+        }
+    }
+
     pub fn add_replica(self: *ServerState, stream: net.Stream) !void {
         const rep_ptr = try Replica.init(self.allocator, stream);
         try self.replicas.append(rep_ptr);
+    }
+
+    pub fn add_replica_2(self: *ServerState, stream: net.Stream) !void {
+        const rep_ptr = try Replica.init(self.allocator, stream);
+        try self.replicas_2.put(stream.handle, rep_ptr);
     }
 };

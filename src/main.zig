@@ -122,21 +122,23 @@ fn handle_wait(
     const to_expire_at = now + block_until;
 
     const get_ack_cmd = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
-    try state.forward_cmd(get_ack_cmd);
+    try state.forward_cmd_2(get_ack_cmd);
 
     var num_replicas_acked: usize = 0;
     while (now < to_expire_at) {
-        for (state.replicas.items) |replica| {
-            if (replica.offset >= state.offset) {
+        num_replicas_acked = 0;
+        var iter = state.replicas_2.valueIterator();
+        while (iter.next()) |replica| {
+            if (replica.*.offset >= state.offset) {
                 num_replicas_acked += 1;
             }
-            if (num_replicas_acked == num_replicas_to_ack) {
-                const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{num_replicas_acked});
-                defer allocator.free(resp);
+        }
+        if (num_replicas_acked >= num_replicas_to_ack) {
+            const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{num_replicas_acked});
+            defer allocator.free(resp);
 
-                _ = try stream.write(resp);
-                return;
-            }
+            _ = try stream.write(resp);
+            return;
         }
 
         // Add a small delay to allow 'now' timestamp to increment
@@ -241,7 +243,7 @@ fn handle_connection(
 
                     switch (state.role) {
                         .master => {
-                            try state.forward_cmd(bytes_slice);
+                            try state.forward_cmd_2(bytes_slice);
                             state.offset += bytes_slice.len;
 
                             _ = try stream.write("+OK\r\n");
@@ -277,7 +279,7 @@ fn handle_connection(
                         switch (state.role) {
                             .master => {
                                 const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
-                                try state.forward_cmd(get_ack_cmd);
+                                try state.forward_cmd_2(get_ack_cmd);
                             },
                             .slave => {
                                 if (get_ack_count == 0) {
@@ -297,6 +299,14 @@ fn handle_connection(
                             },
                         }
                     }
+
+                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "ack")) {
+                        std.debug.print("ACK!!\n", .{});
+
+                        if (state.replicas_2.get(stream.handle)) |replica| {
+                            replica.*.offset += try std.fmt.parseInt(usize, cmd.args[1].content, 10);
+                        }
+                    }
                 },
                 Tag.psync => {
                     try handle_psync(
@@ -306,7 +316,7 @@ fn handle_connection(
                         &cmd.args,
                     );
 
-                    try state.add_replica(stream);
+                    try state.add_replica_2(stream);
                 },
             }
         }
