@@ -5,6 +5,28 @@ const Tag = @import("type.zig").Tag;
 const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
+// TODO: flesh this out and replace current impl of Command
+const Command_ = union(enum) {
+    ping: Ping,
+    info,
+    set: Set,
+    get: Get,
+    psync,
+    replconf,
+
+    const Ping = struct {
+        key: []const u8,
+    };
+
+    const Set = struct {
+        key: []const u8,
+        val: []const u8,
+    };
+    const Get = struct {
+        key: []const u8,
+    };
+};
+
 pub const Token = struct {
     loc: Loc2,
     tag: Tag2,
@@ -12,14 +34,14 @@ pub const Token = struct {
         start: usize,
         end: usize,
     };
-    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal };
+    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus };
 };
 
 pub const Tokenizer = struct {
     buffer: [:0]const u8,
     index: usize = 0,
 
-    const State = enum { start, int, string_literal };
+    const State = enum { start, int, string_literal, minus };
 
     pub fn init(source: [:0]const u8) Tokenizer {
         return .{ .buffer = source };
@@ -44,13 +66,22 @@ pub const Tokenizer = struct {
                         '\n', '\r' => {
                             result.loc.start = self.index + 1;
                         },
-                        'a'...'z', 'A'...'Z', '_', '-' => {
+                        'a'...'z', 'A'...'Z', '_' => {
                             state = .string_literal;
                             result.tag = .string_literal;
                         },
                         '0'...'9' => {
                             state = .int;
                             result.tag = .number_literal;
+                        },
+                        '-' => {
+                            state = .minus;
+                            result.tag = .minus;
+                        },
+                        '?' => {
+                            result.tag = .question_mark;
+                            self.index += 1;
+                            break;
                         },
                         '*' => {
                             result.tag = .asterisk;
@@ -75,6 +106,15 @@ pub const Tokenizer = struct {
                 .string_literal => switch (c) {
                     'a'...'z', 'A'...'Z', '_', '-' => {
                         continue;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+                .minus => switch (c) {
+                    '1' => {
+                        result.tag = .number_literal;
+                        break;
                     },
                     else => {
                         break;

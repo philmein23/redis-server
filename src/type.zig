@@ -7,18 +7,6 @@ pub const Command = struct { loc: Loc, tag: Tag, args: [3]Arg, opt: ?Arg = null,
 pub const Arg = struct { loc: Loc, tag: Tag, content: []const u8 };
 pub const Role = enum { master, slave };
 
-// TODO: flesh this out and replace current impl of Command
-// const Command_ = union(enum) {
-//     ping,
-//     info,
-//     set,
-//     get,
-//     psync,
-//     replconf,
-//
-//     const Set = struct {};
-// };
-//
 pub const Replica = struct {
     stream: net.Stream,
     allocator: std.mem.Allocator,
