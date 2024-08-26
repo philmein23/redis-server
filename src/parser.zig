@@ -5,6 +5,140 @@ const Tag = @import("type.zig").Tag;
 const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
+pub const Token = struct {
+    loc: Loc2,
+    tag: Tag2,
+    pub const Loc2 = struct {
+        start: usize,
+        end: usize,
+    };
+    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal };
+};
+
+pub const Tokenizer = struct {
+    buffer: [:0]const u8,
+    index: usize = 0,
+
+    const State = enum { start, int, string_literal };
+
+    pub fn init(source: [:0]const u8) Tokenizer {
+        return .{ .buffer = source };
+    }
+
+    pub fn next(self: *Tokenizer) Token {
+        var state: State = .start;
+        var result: Token = .{
+            .tag = undefined,
+            .loc = .{
+                .start = self.index,
+                .end = undefined,
+            },
+        };
+
+        while (true) : (self.index += 1) {
+            const c = self.buffer[self.index];
+
+            switch (state) {
+                .start => {
+                    switch (c) {
+                        '\n', '\r' => {
+                            result.loc.start = self.index + 1;
+                        },
+                        'a'...'z', 'A'...'Z', '_', '-' => {
+                            state = .string_literal;
+                            result.tag = .string_literal;
+                        },
+                        '0'...'9' => {
+                            state = .int;
+                            result.tag = .number_literal;
+                        },
+                        '*' => {
+                            result.tag = .asterisk;
+                            self.index += 1;
+                            break;
+                        },
+                        '$' => {
+                            result.tag = .dollar;
+                            self.index += 1;
+                            break;
+                        },
+                        ':' => {
+                            result.tag = .colon;
+                            self.index += 1;
+                            break;
+                        },
+                        else => {
+                            break;
+                        },
+                    }
+                },
+                .string_literal => switch (c) {
+                    'a'...'z', 'A'...'Z', '_', '-' => {
+                        continue;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+                .int => switch (c) {
+                    '0'...'9' => {
+                        continue;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+            }
+        }
+
+        result.loc.end = self.index;
+        return result;
+    }
+};
+
+test "echo tokenizer" {
+    const bytes = "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n";
+    try testTokenize(bytes, &.{
+        .asterisk,
+        .number_literal,
+        .dollar,
+        .number_literal,
+        .string_literal,
+        .dollar,
+        .number_literal,
+        .string_literal,
+    });
+}
+
+test "set tokenizer" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    try testTokenize(bytes, &.{
+        .asterisk,
+        .number_literal,
+        .dollar,
+        .number_literal,
+        .string_literal,
+        .dollar,
+        .number_literal,
+        .string_literal,
+        .dollar,
+        .number_literal,
+        .string_literal,
+    });
+}
+
+fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag2) !void {
+    var tokenizer = Tokenizer.init(source);
+    for (expected_token_tags) |expected_token_tag| {
+        const token = tokenizer.next();
+        try std.testing.expectEqual(expected_token_tag, token.tag);
+    }
+
+    const last_token = tokenizer.next();
+    try std.testing.expectEqual(source.len, last_token.loc.start);
+    try std.testing.expectEqual(source.len, last_token.loc.end);
+}
+
 // TODO: Refactor Parser: break this up to coverting buffer stream into Tokens then using an updated Parser covert to Command representation.
 pub const Parser = struct {
     buffer: [:0]const u8,
@@ -314,7 +448,7 @@ test "test WAIT" {
     const bytes = "*3\r\n$4\r\nWAIT\r\n$1\r\n5\r\n$3\r\n500\r\n";
     var parser = Parser.init(allocator, bytes);
     const command = try parser.parse();
-    try std.testing.expectEqual(Tag.psync, command.tag);
+    try std.testing.expectEqual(Tag.wait, command.tag);
     try std.testing.expectEqualSlices(u8, "5", command.args[0].content);
     try std.testing.expectEqualSlices(u8, "500", command.args[1].content);
 }

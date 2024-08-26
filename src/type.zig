@@ -42,8 +42,9 @@ pub const Replica = struct {
     }
 };
 
+// TODO: refactor ServerState, perhaps into a tagged union, that can differentiate between a master ServerState and a slave ServerState
 pub const ServerState = struct {
-    replicas: std.ArrayList(*Replica), // TODO: need to figure out a way to not allocate mmeory when the role is 'slave'
+    replicas: std.ArrayList(*Replica), // TODO: to deprecate
     replicas_2: std.AutoHashMap(std.posix.fd_t, *Replica),
     role: Role = .master,
     replication_id: ?[]u8 = null,
@@ -88,6 +89,7 @@ pub const ServerState = struct {
         self.replication_id = rep_id_slice;
     }
 
+    //TODO: to deprecate
     pub fn forward_cmd(self: *ServerState, cmd_buf: []const u8) !void {
         for (self.replicas.items) |replica| {
             try replica.write(cmd_buf);
@@ -101,6 +103,7 @@ pub const ServerState = struct {
         }
     }
 
+    //TODO: to deprecate
     pub fn add_replica(self: *ServerState, stream: net.Stream) !void {
         const rep_ptr = try Replica.init(self.allocator, stream);
         try self.replicas.append(rep_ptr);
