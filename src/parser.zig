@@ -246,6 +246,33 @@ pub const Parser_ = struct {
                     cmd.echo = echo_msg;
                     return cmd;
                 }
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
+                    var cmd = Command_{ .echo = undefined };
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+
+                    const echo_msg = self.from_source(self.next_token());
+                    cmd.echo = echo_msg;
+                    return cmd;
+                }
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "set")) |_| {
+                    var cmd = Command_{ .set = .{
+                        .key = undefined,
+                        .val = undefined,
+                        .exp = 0,
+                    } };
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+
+                    cmd.set.key = self.from_source(self.next_token());
+
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+
+                    cmd.set.val = self.from_source(self.next_token());
+
+                    return cmd;
+                }
             },
             .dollar => {},
             else => {},
@@ -261,10 +288,19 @@ test "parsing echo command" {
     const cmd = try parser.parse();
 
     try std.testing.expectEqual(Command_.echo, std.meta.activeTag(cmd));
-    try std.testing.expectEqualSlices("pineapple", cmd.echo);
+    try std.testing.expectEqualSlices(u8, "pineapple", cmd.echo);
 }
 
-// TODO: Refactor Parser: break this up to coverting buffer stream into Tokens then using an updated Parser covert to Command representation.
+test "parsing set command" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    var parser = Parser_.init(bytes);
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
+    try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+}
+
 pub const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
