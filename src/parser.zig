@@ -6,7 +6,7 @@ const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
 const Command_ = union(enum) {
-    ping: Ping,
+    ping,
     info: Info,
     set: Set,
     get: Get,
@@ -20,10 +20,6 @@ const Command_ = union(enum) {
     const Wait = struct { num_replicas_to_ack: usize, exp: i16 };
 
     const Info = enum { replication };
-
-    const Ping = struct {
-        key: []const u8,
-    };
 
     const Set = struct {
         key: []const u8,
@@ -47,7 +43,7 @@ pub const Token = struct {
         start: usize,
         end: usize,
     };
-    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus };
+    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus, eoc };
 };
 
 pub const Tokenizer = struct {
@@ -112,6 +108,7 @@ pub const Tokenizer = struct {
                             break;
                         },
                         else => {
+                            result.tag = .eoc;
                             break;
                         },
                     }
@@ -161,6 +158,7 @@ test "echo tokenizer" {
         .dollar,
         .number_literal,
         .string_literal,
+        .eoc,
     });
 }
 
@@ -178,6 +176,7 @@ test "set tokenizer" {
         .dollar,
         .number_literal,
         .string_literal,
+        .eoc,
     });
 }
 
@@ -195,6 +194,7 @@ test "psync tokenizer" {
         .dollar,
         .number_literal,
         .number_literal,
+        .eoc,
     });
 }
 
@@ -211,51 +211,114 @@ fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag2) !
 }
 
 pub const Parser_ = struct {
+    gpa: std.mem.Allocator,
+    tokens: TokenList.Slice,
     source: [:0]const u8,
-    tokenizer: Tokenizer,
+    tok_i: ByteOffset = 0,
+    token_tags: []const Token.Tag2,
+    token_starts: []const ByteOffset,
 
-    pub fn init(buffer: [:0]const u8) Parser_ {
-        return .{ .source = buffer, .tokenizer = Tokenizer.init(buffer) };
+    pub const TokenList = std.MultiArrayList(struct {
+        tag: Token.Tag2,
+        start: ByteOffset,
+    });
+    pub const ByteOffset = u8;
+
+    pub fn next_token(self: *Parser_) ByteOffset {
+        const result = self.tok_i;
+        self.tok_i += 1;
+
+        return result;
     }
 
-    fn next_token(self: *Parser_) Token {
-        return self.tokenizer.next();
+    pub fn eat_token(self: *Parser_, tag: Token.Tag2) ?Token.Tag2 {
+        if (self.token_tags[self.tok_i] == tag) self.next_token() else null;
     }
 
-    fn from_source(self: *Parser_, token: Token) []const u8 {
-        return self.source[token.loc.start..token.loc.end];
+    pub fn init(gpa: std.mem.Allocator, source: [:0]const u8) !Parser_ {
+        var tokens = TokenList{};
+        defer tokens.deinit(gpa);
+
+        var tokenizer = Tokenizer.init(source);
+        while (true) {
+            const token = tokenizer.next();
+
+            try tokens.append(gpa, .{
+                .tag = token.tag,
+                .start = @intCast(token.loc.start),
+            });
+
+            if (token.tag == .eoc) break;
+        }
+
+        return .{
+            .gpa = gpa,
+            .tokens = tokens.toOwnedSlice(),
+            .source = source,
+            .token_tags = undefined,
+            .token_starts = undefined,
+        };
+    }
+
+    pub fn deinit(self: *Parser_) void {
+        self.tokens.deinit(self.gpa);
+    }
+
+    fn from_source(self: *Parser_) []const u8 {
+        std.debug.print("source: {s}\n", .{self.source});
+        std.debug.print("tok-i: {d}\n", .{self.tok_i});
+        std.debug.print("starts at: {d}\n", .{self.token_starts[self.tok_i]});
+        std.debug.print("starts at +1: {d}\n", .{self.token_starts[self.tok_i + 1]});
+        const start = self.token_starts[self.tok_i];
+        const end = self.token_starts[self.tok_i + 1];
+        const slice = self.source[start..end];
+
+        return std.mem.trimRight(u8, slice, "\r\n");
+        // return self.source[self.token_starts[self.tok_i]..self.token_starts[self.tok_i + 1]];
     }
 
     pub fn parse(self: *Parser_) !Command_ {
-        const token = self.next_token();
+        self.token_tags = self.tokens.items(.tag);
+        self.token_starts = self.tokens.items(.start);
 
-        switch (token.tag) {
+        for (self.token_starts) |start| {
+            std.debug.print("START VAL: {d}\n", .{start});
+        }
+
+        for (self.token_tags) |tag| {
+            std.debug.print("TAG VAL: {s}\n", .{@tagName(tag)});
+        }
+
+        switch (self.token_tags[self.next_token()]) {
             .asterisk => {
                 _ = self.next_token(); // consume number token
+                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
                 _ = self.next_token(); // consume dollar token
+                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
                 _ = self.next_token(); // consume number token
+                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
 
-                const cmd_string = self.from_source(self.next_token());
+                const cmd_string = self.from_source();
+                std.debug.print("CMD STR: {s}\n", .{cmd_string});
 
                 if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
+                    _ = self.next_token(); // consume string_token
+
                     var cmd = Command_{ .echo = undefined };
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
 
-                    const echo_msg = self.from_source(self.next_token());
-                    cmd.echo = echo_msg;
-                    return cmd;
-                }
-                if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
-                    var cmd = Command_{ .echo = undefined };
-                    _ = self.next_token(); // consume dollar token
-                    _ = self.next_token(); // consume number token
+                    const echo_msg = self.from_source();
 
-                    const echo_msg = self.from_source(self.next_token());
+                    std.debug.print("ECHO_MSG: {d}\n", .{echo_msg});
+
                     cmd.echo = echo_msg;
+
                     return cmd;
                 }
+
                 if (std.ascii.indexOfIgnoreCase(cmd_string, "set")) |_| {
+                    _ = self.next_token();
                     var cmd = Command_{ .set = .{
                         .key = undefined,
                         .val = undefined,
@@ -264,12 +327,24 @@ pub const Parser_ = struct {
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
 
-                    cmd.set.key = self.from_source(self.next_token());
+                    cmd.set.key = self.from_source();
 
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
 
-                    cmd.set.val = self.from_source(self.next_token());
+                    cmd.set.val = self.from_source();
+
+                    return cmd;
+                }
+
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "get")) |_| {
+                    var cmd = Command_{ .get = .{
+                        .key = undefined,
+                    } };
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+
+                    cmd.set.key = self.from_source();
 
                     return cmd;
                 }
@@ -284,8 +359,15 @@ pub const Parser_ = struct {
 
 test "parsing echo command" {
     const bytes = "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n";
-    var parser = Parser_.init(bytes);
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
     const cmd = try parser.parse();
+
+    const TestEnum = enum { phil, cool };
+    const Test_ = struct { tag: TestEnum, start: u32 };
+    std.debug.print("SIZE OF enum: {d}, ALIGNMENT: {d}\n", .{ @sizeOf(Test_), @alignOf(Test_) });
 
     try std.testing.expectEqual(Command_.echo, std.meta.activeTag(cmd));
     try std.testing.expectEqualSlices(u8, "pineapple", cmd.echo);
@@ -293,7 +375,10 @@ test "parsing echo command" {
 
 test "parsing set command" {
     const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
-    var parser = Parser_.init(bytes);
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
     const cmd = try parser.parse();
 
     try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
