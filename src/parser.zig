@@ -5,7 +5,460 @@ const Tag = @import("type.zig").Tag;
 const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
-// TODO: Refactor Parser: break this up to coverting buffer stream into Tokens then using an updated Parser covert to Command representation.
+const Command_ = union(enum) {
+    ping,
+    info: Info,
+    set: Set,
+    get: Get,
+    psync,
+    replconf: Replconf,
+    wait: Wait,
+    echo: Echo,
+
+    const Echo = []const u8;
+
+    const Wait = struct { num_replicas_to_ack: usize, exp: i16 };
+
+    const Info = enum { replication };
+
+    const Set = struct {
+        key: []const u8,
+        val: []const u8,
+        exp: i16,
+    };
+    const Get = struct {
+        key: []const u8,
+    };
+
+    const Replconf = union(enum) {
+        ack: usize,
+        getack: u8,
+    };
+};
+
+pub const Token = struct {
+    loc: Loc2,
+    tag: Tag2,
+    pub const Loc2 = struct {
+        start: usize,
+        end: usize,
+    };
+    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus, carriage_return, eoc };
+};
+
+pub const Tokenizer = struct {
+    buffer: [:0]const u8,
+    index: usize = 0,
+
+    const State = enum { start, int, string_literal, minus, carriage };
+
+    pub fn init(source: [:0]const u8) Tokenizer {
+        return .{ .buffer = source };
+    }
+
+    pub fn next(self: *Tokenizer) Token {
+        var state: State = .start;
+        var result: Token = .{
+            .tag = undefined,
+            .loc = .{
+                .start = self.index,
+                .end = undefined,
+            },
+        };
+
+        while (true) : (self.index += 1) {
+            const c = self.buffer[self.index];
+
+            switch (state) {
+                .start => {
+                    switch (c) {
+                        '\r' => {
+                            state = .carriage;
+                        },
+                        'a'...'z', 'A'...'Z', '_' => {
+                            state = .string_literal;
+                            result.tag = .string_literal;
+                        },
+                        '0'...'9' => {
+                            state = .int;
+                            result.tag = .number_literal;
+                        },
+                        '-' => {
+                            state = .minus;
+                            result.tag = .minus;
+                        },
+                        '?' => {
+                            result.tag = .question_mark;
+                            self.index += 1;
+                            break;
+                        },
+                        '*' => {
+                            result.tag = .asterisk;
+                            self.index += 1;
+                            break;
+                        },
+                        '$' => {
+                            result.tag = .dollar;
+                            self.index += 1;
+                            break;
+                        },
+                        ':' => {
+                            result.tag = .colon;
+                            self.index += 1;
+                            break;
+                        },
+                        else => {
+                            result.tag = .eoc;
+                            break;
+                        },
+                    }
+                },
+                .string_literal => switch (c) {
+                    'a'...'z', 'A'...'Z', '_', '-' => {
+                        continue;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+                .minus => switch (c) {
+                    '1' => {
+                        result.tag = .number_literal;
+                        self.index += 1;
+                        break;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+                .int => switch (c) {
+                    '0'...'9' => {
+                        continue;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+                .carriage => switch (c) {
+                    '\n' => {
+                        result.tag = .carriage_return;
+                        self.index += 1;
+                        break;
+                    },
+                    else => {
+                        break;
+                    },
+                },
+            }
+        }
+
+        result.loc.end = self.index;
+        return result;
+    }
+};
+
+test "echo tokenizer" {
+    const bytes = "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n";
+    try testTokenize(bytes, &.{
+        .asterisk,
+        .number_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .eoc,
+    });
+}
+
+test "set tokenizer" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    try testTokenize(bytes, &.{
+        .asterisk,
+        .number_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .eoc,
+    });
+}
+
+test "psync tokenizer" {
+    const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    try testTokenize(bytes, &.{
+        .asterisk,
+        .number_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .string_literal,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .question_mark,
+        .carriage_return,
+        .dollar,
+        .number_literal,
+        .carriage_return,
+        .number_literal,
+        .carriage_return,
+        .eoc,
+    });
+}
+
+fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag2) !void {
+    var tokenizer = Tokenizer.init(source);
+    for (expected_token_tags) |expected_token_tag| {
+        const token = tokenizer.next();
+        try std.testing.expectEqual(expected_token_tag, token.tag);
+    }
+
+    const last_token = tokenizer.next();
+    try std.testing.expectEqual(source.len, last_token.loc.start);
+    try std.testing.expectEqual(source.len, last_token.loc.end);
+}
+
+pub const Parser_ = struct {
+    gpa: std.mem.Allocator,
+    tokens: TokenList.Slice,
+    source: [:0]const u8,
+    tok_i: ByteOffset = 0,
+    token_tags: []const Token.Tag2,
+    token_starts: []const ByteOffset,
+
+    pub const TokenList = std.MultiArrayList(struct {
+        tag: Token.Tag2,
+        start: ByteOffset,
+    });
+    pub const ByteOffset = u8;
+
+    pub fn next_token(self: *Parser_) ByteOffset {
+        const result = self.tok_i;
+        self.tok_i += 1;
+
+        return result;
+    }
+
+    pub fn eat_token(self: *Parser_, tag: Token.Tag2) ?Token.Tag2 {
+        if (self.token_tags[self.tok_i] == tag) self.next_token() else null;
+    }
+
+    pub fn init(gpa: std.mem.Allocator, source: [:0]const u8) !Parser_ {
+        var tokens = TokenList{};
+
+        var tokenizer = Tokenizer.init(source);
+        while (true) {
+            const token = tokenizer.next();
+
+            try tokens.append(gpa, .{
+                .tag = token.tag,
+                .start = @intCast(token.loc.start),
+            });
+            if (token.tag == .eoc) break;
+        }
+
+        return .{
+            .gpa = gpa,
+            .tokens = tokens.toOwnedSlice(),
+            .source = source,
+            .token_tags = undefined,
+            .token_starts = undefined,
+        };
+    }
+
+    pub fn deinit(self: *Parser_) void {
+        self.tokens.deinit(self.gpa);
+    }
+
+    fn from_source(self: *Parser_) []const u8 {
+        const start = self.token_starts[self.tok_i];
+        const end = self.token_starts[self.tok_i + 1];
+        return self.source[start..end];
+    }
+
+    pub fn parse(self: *Parser_) !Command_ {
+        self.token_tags = self.tokens.items(.tag);
+        self.token_starts = self.tokens.items(.start);
+
+        for (self.token_starts) |start| {
+            std.debug.print("START VAL: {d}\n", .{start});
+        }
+
+        for (self.token_tags) |tag| {
+            std.debug.print("TAG VAL: {s}\n", .{@tagName(tag)});
+        }
+
+        const tag = self.token_tags[self.next_token()];
+
+        switch (tag) {
+            .asterisk => {
+                _ = self.next_token(); // consume number token
+                _ = self.next_token(); // consume carriage return token
+                _ = self.next_token(); // consume dollar token
+                _ = self.next_token(); // consume number token
+                _ = self.next_token(); // consume carriage return token
+
+                const cmd_string = self.from_source();
+                std.debug.print("CMD STR: {s}\n", .{cmd_string});
+
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "ping")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    const cmd = Command_{ .ping = {} };
+
+                    return cmd;
+                }
+
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    var cmd = Command_{ .echo = undefined };
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
+
+                    const echo_msg = self.from_source();
+                    _ = self.next_token(); // consume carriage return token
+
+                    std.debug.print("ECHO_MSG: {d}\n", .{echo_msg});
+
+                    cmd.echo = echo_msg;
+                    _ = self.next_token(); // consume carriage return token
+
+                    return cmd;
+                }
+
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "set")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    var cmd = Command_{ .set = .{
+                        .key = undefined,
+                        .val = undefined,
+                        .exp = 0,
+                    } };
+
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
+
+                    cmd.set.key = self.from_source();
+                    _ = self.next_token(); // consume string_token
+
+                    _ = self.next_token(); // consume carriage return token
+
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+
+                    _ = self.next_token(); // consume carriage return token
+
+                    cmd.set.val = self.from_source();
+
+                    _ = self.next_token(); // consume carriage return token
+
+                    return cmd;
+                }
+
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "get")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    var cmd = Command_{ .get = .{
+                        .key = undefined,
+                    } };
+
+                    _ = self.next_token(); // consume dollar token
+                    _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
+
+                    cmd.get.key = self.from_source();
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    return cmd;
+                }
+            },
+            else => {},
+        }
+
+        return error.UnableToParseCommand;
+    }
+};
+
+test "parsing echo command" {
+    const bytes = "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    const TestEnum = enum { phil, cool };
+    const Test_ = struct { tag: TestEnum, start: u32 };
+    std.debug.print("SIZE OF enum: {d}, ALIGNMENT: {d}\n", .{ @sizeOf(Test_), @alignOf(Test_) });
+
+    try std.testing.expectEqual(Command_.echo, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "pineapple", cmd.echo);
+}
+
+test "parsing set command" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
+    try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+}
+test "parsing get command" {
+    const bytes = "*2\r\n$3\r\nGET\r\n$5\r\napple\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.get, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.get.key);
+}
+
+test "parsing ping command" {
+    const bytes = "*1\r\n$4\r\nPING\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.ping, std.meta.activeTag(cmd));
+}
+
 pub const Parser = struct {
     buffer: [:0]const u8,
     curr_index: usize,
@@ -314,7 +767,7 @@ test "test WAIT" {
     const bytes = "*3\r\n$4\r\nWAIT\r\n$1\r\n5\r\n$3\r\n500\r\n";
     var parser = Parser.init(allocator, bytes);
     const command = try parser.parse();
-    try std.testing.expectEqual(Tag.psync, command.tag);
+    try std.testing.expectEqual(Tag.wait, command.tag);
     try std.testing.expectEqualSlices(u8, "5", command.args[0].content);
     try std.testing.expectEqualSlices(u8, "500", command.args[1].content);
 }
