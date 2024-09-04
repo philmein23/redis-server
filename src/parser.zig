@@ -43,14 +43,14 @@ pub const Token = struct {
         start: usize,
         end: usize,
     };
-    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus, eoc };
+    pub const Tag2 = enum { dollar, asterisk, colon, number_literal, string_literal, question_mark, minus, carriage_return, eoc };
 };
 
 pub const Tokenizer = struct {
     buffer: [:0]const u8,
     index: usize = 0,
 
-    const State = enum { start, int, string_literal, minus };
+    const State = enum { start, int, string_literal, minus, carriage };
 
     pub fn init(source: [:0]const u8) Tokenizer {
         return .{ .buffer = source };
@@ -72,8 +72,8 @@ pub const Tokenizer = struct {
             switch (state) {
                 .start => {
                     switch (c) {
-                        '\n', '\r' => {
-                            result.loc.start = self.index + 1;
+                        '\r' => {
+                            state = .carriage;
                         },
                         'a'...'z', 'A'...'Z', '_' => {
                             state = .string_literal;
@@ -139,6 +139,16 @@ pub const Tokenizer = struct {
                         break;
                     },
                 },
+                .carriage => switch (c) {
+                    '\n' => {
+                        result.tag = .carriage_return;
+                        self.index += 1;
+                        break;
+                    },
+                    else => {
+                        break;
+                    },
+                },
             }
         }
 
@@ -152,12 +162,17 @@ test "echo tokenizer" {
     try testTokenize(bytes, &.{
         .asterisk,
         .number_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .eoc,
     });
 }
@@ -167,15 +182,22 @@ test "set tokenizer" {
     try testTokenize(bytes, &.{
         .asterisk,
         .number_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .eoc,
     });
 }
@@ -185,15 +207,22 @@ test "psync tokenizer" {
     try testTokenize(bytes, &.{
         .asterisk,
         .number_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .string_literal,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .question_mark,
+        .carriage_return,
         .dollar,
         .number_literal,
+        .carriage_return,
         .number_literal,
+        .carriage_return,
         .eoc,
     });
 }
@@ -237,7 +266,6 @@ pub const Parser_ = struct {
 
     pub fn init(gpa: std.mem.Allocator, source: [:0]const u8) !Parser_ {
         var tokens = TokenList{};
-        defer tokens.deinit(gpa);
 
         var tokenizer = Tokenizer.init(source);
         while (true) {
@@ -247,7 +275,6 @@ pub const Parser_ = struct {
                 .tag = token.tag,
                 .start = @intCast(token.loc.start),
             });
-
             if (token.tag == .eoc) break;
         }
 
@@ -265,16 +292,9 @@ pub const Parser_ = struct {
     }
 
     fn from_source(self: *Parser_) []const u8 {
-        std.debug.print("source: {s}\n", .{self.source});
-        std.debug.print("tok-i: {d}\n", .{self.tok_i});
-        std.debug.print("starts at: {d}\n", .{self.token_starts[self.tok_i]});
-        std.debug.print("starts at +1: {d}\n", .{self.token_starts[self.tok_i + 1]});
         const start = self.token_starts[self.tok_i];
         const end = self.token_starts[self.tok_i + 1];
-        const slice = self.source[start..end];
-
-        return std.mem.trimRight(u8, slice, "\r\n");
-        // return self.source[self.token_starts[self.tok_i]..self.token_starts[self.tok_i + 1]];
+        return self.source[start..end];
     }
 
     pub fn parse(self: *Parser_) !Command_ {
@@ -289,67 +309,98 @@ pub const Parser_ = struct {
             std.debug.print("TAG VAL: {s}\n", .{@tagName(tag)});
         }
 
-        switch (self.token_tags[self.next_token()]) {
+        const tag = self.token_tags[self.next_token()];
+
+        switch (tag) {
             .asterisk => {
                 _ = self.next_token(); // consume number token
-                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
+                _ = self.next_token(); // consume carriage return token
                 _ = self.next_token(); // consume dollar token
-                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
                 _ = self.next_token(); // consume number token
-                std.debug.print("TOK_I: {d}\n", .{self.tok_i});
+                _ = self.next_token(); // consume carriage return token
 
                 const cmd_string = self.from_source();
                 std.debug.print("CMD STR: {s}\n", .{cmd_string});
 
+                if (std.ascii.indexOfIgnoreCase(cmd_string, "ping")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
+                    const cmd = Command_{ .ping = {} };
+
+                    return cmd;
+                }
+
                 if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
                     _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
 
                     var cmd = Command_{ .echo = undefined };
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
 
                     const echo_msg = self.from_source();
+                    _ = self.next_token(); // consume carriage return token
 
                     std.debug.print("ECHO_MSG: {d}\n", .{echo_msg});
 
                     cmd.echo = echo_msg;
+                    _ = self.next_token(); // consume carriage return token
 
                     return cmd;
                 }
 
                 if (std.ascii.indexOfIgnoreCase(cmd_string, "set")) |_| {
-                    _ = self.next_token();
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
                     var cmd = Command_{ .set = .{
                         .key = undefined,
                         .val = undefined,
                         .exp = 0,
                     } };
+
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
 
                     cmd.set.key = self.from_source();
+                    _ = self.next_token(); // consume string_token
+
+                    _ = self.next_token(); // consume carriage return token
 
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
 
+                    _ = self.next_token(); // consume carriage return token
+
                     cmd.set.val = self.from_source();
+
+                    _ = self.next_token(); // consume carriage return token
 
                     return cmd;
                 }
 
                 if (std.ascii.indexOfIgnoreCase(cmd_string, "get")) |_| {
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
+
                     var cmd = Command_{ .get = .{
                         .key = undefined,
                     } };
+
                     _ = self.next_token(); // consume dollar token
                     _ = self.next_token(); // consume number token
+                    _ = self.next_token(); // consume carriage return token
 
-                    cmd.set.key = self.from_source();
+                    cmd.get.key = self.from_source();
+                    _ = self.next_token(); // consume string_token
+                    _ = self.next_token(); // consume carriage return token
 
                     return cmd;
                 }
             },
-            .dollar => {},
             else => {},
         }
 
@@ -384,6 +435,28 @@ test "parsing set command" {
     try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
     try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
     try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+}
+test "parsing get command" {
+    const bytes = "*2\r\n$3\r\nGET\r\n$5\r\napple\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.get, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.get.key);
+}
+
+test "parsing ping command" {
+    const bytes = "*1\r\n$4\r\nPING\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+    defer parser.deinit();
+
+    const cmd = try parser.parse();
+
+    try std.testing.expectEqual(Command_.ping, std.meta.activeTag(cmd));
 }
 
 pub const Parser = struct {
