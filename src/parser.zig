@@ -10,7 +10,7 @@ const Command_ = union(enum) {
     info: Info,
     set: Set,
     get: Get,
-    psync,
+    psync: Psync,
     replconf: Replconf,
     wait: Wait,
     echo: Echo,
@@ -24,16 +24,19 @@ const Command_ = union(enum) {
     const Set = struct {
         key: []const u8,
         val: []const u8,
-        exp: i16,
+        exp: ?i16,
     };
     const Get = struct {
         key: []const u8,
     };
 
-    const Replconf = union(enum) {
-        ack: usize,
-        getack: u8,
+    const Replconf = struct {
+        listening_port: ?void = null,
+        ack: ?[]const u8 = null,
+        getack: ?[]const u8 = null,
     };
+
+    const Psync = struct { replication_id: []const u8, offset: []const u8 };
 };
 
 pub const Token = struct {
@@ -241,169 +244,86 @@ fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag2) !
 
 pub const Parser_ = struct {
     gpa: std.mem.Allocator,
-    tokens: TokenList.Slice,
     source: [:0]const u8,
-    tok_i: ByteOffset = 0,
-    token_tags: []const Token.Tag2,
-    token_starts: []const ByteOffset,
-
-    pub const TokenList = std.MultiArrayList(struct {
-        tag: Token.Tag2,
-        start: ByteOffset,
-    });
-    pub const ByteOffset = u8;
-
-    pub fn next_token(self: *Parser_) ByteOffset {
-        const result = self.tok_i;
-        self.tok_i += 1;
-
-        return result;
-    }
-
-    pub fn eat_token(self: *Parser_, tag: Token.Tag2) ?Token.Tag2 {
-        if (self.token_tags[self.tok_i] == tag) self.next_token() else null;
-    }
 
     pub fn init(gpa: std.mem.Allocator, source: [:0]const u8) !Parser_ {
-        var tokens = TokenList{};
-
-        var tokenizer = Tokenizer.init(source);
-        while (true) {
-            const token = tokenizer.next();
-
-            try tokens.append(gpa, .{
-                .tag = token.tag,
-                .start = @intCast(token.loc.start),
-            });
-            if (token.tag == .eoc) break;
-        }
-
         return .{
             .gpa = gpa,
-            .tokens = tokens.toOwnedSlice(),
             .source = source,
-            .token_tags = undefined,
-            .token_starts = undefined,
         };
     }
 
-    pub fn deinit(self: *Parser_) void {
-        self.tokens.deinit(self.gpa);
-    }
+    pub fn parse_(self: *Parser_) !Command_ {
+        var cmd_iter = std.mem.splitSequence(u8, self.source, "\r\n");
 
-    fn from_source(self: *Parser_) []const u8 {
-        const start = self.token_starts[self.tok_i];
-        const end = self.token_starts[self.tok_i + 1];
-        return self.source[start..end];
-    }
+        if (cmd_iter.next()) |maybe_type| {
+            const part = maybe_type[0];
+            switch (part) {
+                '*' => {
+                    _ = cmd_iter.next(); // consume cmd length token
 
-    pub fn parse(self: *Parser_) !Command_ {
-        self.token_tags = self.tokens.items(.tag);
-        self.token_starts = self.tokens.items(.start);
+                    const cmd_string = cmd_iter.next().?; // consume cmd string
 
-        for (self.token_starts) |start| {
-            std.debug.print("START VAL: {d}\n", .{start});
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "set")) {
+                        _ = cmd_iter.next(); // consume set key length token
+
+                        const key = cmd_iter.next().?; // consume key val
+                        _ = cmd_iter.next(); // consume set val length token
+                        const val = cmd_iter.next().?; // consume val
+
+                        return Command_{ .set = .{
+                            .key = key,
+                            .val = val,
+                            .exp = 0,
+                        } };
+                    }
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "get")) {
+                        _ = cmd_iter.next(); // consume set key length token
+                        const key = cmd_iter.next().?; // consume key val
+
+                        return Command_{ .get = .{
+                            .key = key,
+                        } };
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "echo")) {
+                        _ = cmd_iter.next(); // consume set key length token
+                        const val = cmd_iter.next().?; // consume val
+                        return Command_{ .echo = val };
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "ping")) {
+                        return Command_{ .ping = {} };
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "info")) {
+                        _ = cmd_iter.next(); // consume length token
+                        _ = cmd_iter.next(); // consume replication val
+                        return Command_{ .info = .replication };
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "replconf")) {
+                        _ = cmd_iter.next(); // consume length token
+                        const subcommand = cmd_iter.next().?; // consume subcommand
+
+                        if (std.ascii.eqlIgnoreCase(subcommand, "listening-port")) {
+                            return Command_{ .replconf = .{ .listening_port = null } };
+                        } else if (std.ascii.eqlIgnoreCase(subcommand, "getack")) {
+                            _ = cmd_iter.next(); // consume length token
+                            const getack_asterisk = cmd_iter.next().?; // consume asterisk
+
+                            return Command_{ .replconf = .{ .getack = getack_asterisk } };
+                        } else if (std.ascii.eqlIgnoreCase(subcommand, "ack")) {
+                            _ = cmd_iter.next(); // consume length token
+                            const ack_val = cmd_iter.next().?; // consume ack val
+
+                            return Command_{ .replconf = .{ .ack = ack_val } };
+                        }
+                    }
+                },
+                else => {},
+            }
         }
-
-        for (self.token_tags) |tag| {
-            std.debug.print("TAG VAL: {s}\n", .{@tagName(tag)});
-        }
-
-        const tag = self.token_tags[self.next_token()];
-
-        switch (tag) {
-            .asterisk => {
-                _ = self.next_token(); // consume number token
-                _ = self.next_token(); // consume carriage return token
-                _ = self.next_token(); // consume dollar token
-                _ = self.next_token(); // consume number token
-                _ = self.next_token(); // consume carriage return token
-
-                const cmd_string = self.from_source();
-                std.debug.print("CMD STR: {s}\n", .{cmd_string});
-
-                if (std.ascii.indexOfIgnoreCase(cmd_string, "ping")) |_| {
-                    _ = self.next_token(); // consume string_token
-                    _ = self.next_token(); // consume carriage return token
-
-                    const cmd = Command_{ .ping = {} };
-
-                    return cmd;
-                }
-
-                if (std.ascii.indexOfIgnoreCase(cmd_string, "echo")) |_| {
-                    _ = self.next_token(); // consume string_token
-                    _ = self.next_token(); // consume carriage return token
-
-                    var cmd = Command_{ .echo = undefined };
-                    _ = self.next_token(); // consume dollar token
-                    _ = self.next_token(); // consume number token
-                    _ = self.next_token(); // consume carriage return token
-
-                    const echo_msg = self.from_source();
-                    _ = self.next_token(); // consume carriage return token
-
-                    std.debug.print("ECHO_MSG: {d}\n", .{echo_msg});
-
-                    cmd.echo = echo_msg;
-                    _ = self.next_token(); // consume carriage return token
-
-                    return cmd;
-                }
-
-                if (std.ascii.indexOfIgnoreCase(cmd_string, "set")) |_| {
-                    _ = self.next_token(); // consume string_token
-                    _ = self.next_token(); // consume carriage return token
-
-                    var cmd = Command_{ .set = .{
-                        .key = undefined,
-                        .val = undefined,
-                        .exp = 0,
-                    } };
-
-                    _ = self.next_token(); // consume dollar token
-                    _ = self.next_token(); // consume number token
-                    _ = self.next_token(); // consume carriage return token
-
-                    cmd.set.key = self.from_source();
-                    _ = self.next_token(); // consume string_token
-
-                    _ = self.next_token(); // consume carriage return token
-
-                    _ = self.next_token(); // consume dollar token
-                    _ = self.next_token(); // consume number token
-
-                    _ = self.next_token(); // consume carriage return token
-
-                    cmd.set.val = self.from_source();
-
-                    _ = self.next_token(); // consume carriage return token
-
-                    return cmd;
-                }
-
-                if (std.ascii.indexOfIgnoreCase(cmd_string, "get")) |_| {
-                    _ = self.next_token(); // consume string_token
-                    _ = self.next_token(); // consume carriage return token
-
-                    var cmd = Command_{ .get = .{
-                        .key = undefined,
-                    } };
-
-                    _ = self.next_token(); // consume dollar token
-                    _ = self.next_token(); // consume number token
-                    _ = self.next_token(); // consume carriage return token
-
-                    cmd.get.key = self.from_source();
-                    _ = self.next_token(); // consume string_token
-                    _ = self.next_token(); // consume carriage return token
-
-                    return cmd;
-                }
-            },
-            else => {},
-        }
-
         return error.UnableToParseCommand;
     }
 };
@@ -412,37 +332,30 @@ test "parsing echo command" {
     const bytes = "*2\r\n$4\r\nECHO\r\n$9\r\npineapple\r\n";
     const gpa = std.testing.allocator;
     var parser = try Parser_.init(gpa, bytes);
-    defer parser.deinit();
 
-    const cmd = try parser.parse();
-
-    const TestEnum = enum { phil, cool };
-    const Test_ = struct { tag: TestEnum, start: u32 };
-    std.debug.print("SIZE OF enum: {d}, ALIGNMENT: {d}\n", .{ @sizeOf(Test_), @alignOf(Test_) });
+    const cmd = try parser.parse_();
 
     try std.testing.expectEqual(Command_.echo, std.meta.activeTag(cmd));
     try std.testing.expectEqualSlices(u8, "pineapple", cmd.echo);
 }
 
 test "parsing set command" {
-    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
-    const gpa = std.testing.allocator;
-    var parser = try Parser_.init(gpa, bytes);
-    defer parser.deinit();
+    const bytes2 = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    const gpa2 = std.testing.allocator;
+    var parser2 = try Parser_.init(gpa2, bytes2);
 
-    const cmd = try parser.parse();
+    const cmd2 = try parser2.parse_();
 
-    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
-    try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
-    try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd2));
+    try std.testing.expectEqualSlices(u8, "apple", cmd2.set.key);
+    try std.testing.expectEqualSlices(u8, "pear", cmd2.set.val);
 }
 test "parsing get command" {
     const bytes = "*2\r\n$3\r\nGET\r\n$5\r\napple\r\n";
     const gpa = std.testing.allocator;
     var parser = try Parser_.init(gpa, bytes);
-    defer parser.deinit();
 
-    const cmd = try parser.parse();
+    const cmd = try parser.parse_();
 
     try std.testing.expectEqual(Command_.get, std.meta.activeTag(cmd));
     try std.testing.expectEqualSlices(u8, "apple", cmd.get.key);
@@ -452,11 +365,54 @@ test "parsing ping command" {
     const bytes = "*1\r\n$4\r\nPING\r\n";
     const gpa = std.testing.allocator;
     var parser = try Parser_.init(gpa, bytes);
-    defer parser.deinit();
 
-    const cmd = try parser.parse();
+    const cmd = try parser.parse_();
 
     try std.testing.expectEqual(Command_.ping, std.meta.activeTag(cmd));
+}
+
+test "parsing info command" {
+    const bytes = "*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.info, std.meta.activeTag(cmd));
+    try std.testing.expectEqual(Command_.Info.replication, cmd.info);
+}
+
+test "parsing replconf listening-port command" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$4\r\n6379\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
+    try std.testing.expectEqual(null, cmd.replconf.listening_port);
+}
+
+test "parsing replconf ack command" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n5\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "5", cmd.replconf.ack.?);
+}
+
+test "parsing replconf getack command" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "*", cmd.replconf.getack.?);
 }
 
 pub const Parser = struct {
