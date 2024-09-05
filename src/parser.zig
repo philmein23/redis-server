@@ -24,7 +24,7 @@ const Command_ = union(enum) {
     const Set = struct {
         key: []const u8,
         val: []const u8,
-        exp: ?i16,
+        px: ?i16 = null,
     };
     const Get = struct {
         key: []const u8,
@@ -32,11 +32,11 @@ const Command_ = union(enum) {
 
     const Replconf = struct {
         listening_port: ?void = null,
-        ack: ?[]const u8 = null,
+        ack: ?usize = null,
         getack: ?[]const u8 = null,
     };
 
-    const Psync = struct { replication_id: []const u8, offset: []const u8 };
+    const Psync = struct { replication_id: []const u8, offset: isize };
 };
 
 pub const Token = struct {
@@ -264,6 +264,35 @@ pub const Parser_ = struct {
 
                     const cmd_string = cmd_iter.next().?; // consume cmd string
 
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "psync")) {
+                        _ = cmd_iter.next(); // consume psync rep id length token
+
+                        const rep_id = cmd_iter.next().?; // consume psync rep id token
+
+                        _ = cmd_iter.next(); // consume wait psync offset length token
+
+                        const offset = try std.fmt.parseInt(isize, cmd_iter.next().?, 10); // consume psync offset val
+
+                        return Command_{ .psync = .{
+                            .replication_id = rep_id,
+                            .offset = offset,
+                        } };
+                    }
+
+                    if (std.ascii.eqlIgnoreCase(cmd_string, "wait")) {
+                        _ = cmd_iter.next(); // consume set key length token
+
+                        const num = try std.fmt.parseInt(usize, cmd_iter.next().?, 10); // consume num rep ack val
+
+                        _ = cmd_iter.next(); // consume wait val length token
+                        const exp = try std.fmt.parseInt(i16, cmd_iter.next().?, 10); // consume wait val
+
+                        return Command_{ .wait = .{
+                            .num_replicas_to_ack = num,
+                            .exp = exp,
+                        } };
+                    }
+
                     if (std.ascii.eqlIgnoreCase(cmd_string, "set")) {
                         _ = cmd_iter.next(); // consume set key length token
 
@@ -271,12 +300,22 @@ pub const Parser_ = struct {
                         _ = cmd_iter.next(); // consume set val length token
                         const val = cmd_iter.next().?; // consume val
 
-                        return Command_{ .set = .{
+                        var cmd = Command_{ .set = .{
                             .key = key,
                             .val = val,
-                            .exp = 0,
                         } };
+
+                        if (cmd_iter.peek() != null and cmd_iter.peek().?.len > 0) {
+                            _ = cmd_iter.next(); // consume set px len token
+                            _ = cmd_iter.next(); // consume set px token
+                            _ = cmd_iter.next(); // consume set px val length token
+
+                            cmd.set.px = try std.fmt.parseInt(i16, cmd_iter.next().?, 10); // consume px val token
+                        }
+
+                        return cmd;
                     }
+
                     if (std.ascii.eqlIgnoreCase(cmd_string, "get")) {
                         _ = cmd_iter.next(); // consume set key length token
                         const key = cmd_iter.next().?; // consume key val
@@ -315,7 +354,7 @@ pub const Parser_ = struct {
                             return Command_{ .replconf = .{ .getack = getack_asterisk } };
                         } else if (std.ascii.eqlIgnoreCase(subcommand, "ack")) {
                             _ = cmd_iter.next(); // consume length token
-                            const ack_val = cmd_iter.next().?; // consume ack val
+                            const ack_val = try std.fmt.parseInt(usize, cmd_iter.next().?, 10); // consume ack val
 
                             return Command_{ .replconf = .{ .ack = ack_val } };
                         }
@@ -339,16 +378,53 @@ test "parsing echo command" {
     try std.testing.expectEqualSlices(u8, "pineapple", cmd.echo);
 }
 
+test "parsing psync command" {
+    const bytes = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.psync, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "?", cmd.psync.replication_id);
+    try std.testing.expectEqual(-1, cmd.psync.offset);
+}
+
+test "parsing wait command" {
+    const bytes = "*3\r\n$4\r\nWAIT\r\n$1\r\n5\r\n$3\r\n500\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.wait, std.meta.activeTag(cmd));
+    try std.testing.expectEqual(5, cmd.wait.num_replicas_to_ack);
+    try std.testing.expectEqual(500, cmd.wait.exp);
+}
+
 test "parsing set command" {
-    const bytes2 = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
-    const gpa2 = std.testing.allocator;
-    var parser2 = try Parser_.init(gpa2, bytes2);
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
 
-    const cmd2 = try parser2.parse_();
+    const cmd = try parser.parse_();
 
-    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd2));
-    try std.testing.expectEqualSlices(u8, "apple", cmd2.set.key);
-    try std.testing.expectEqualSlices(u8, "pear", cmd2.set.val);
+    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
+    try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+}
+
+test "parsing set command with expiry option" {
+    const bytes = "*3\r\n$3\r\nSET\r\n$5\r\napple\r\n$4\r\npear\r\n$2\r\npx\r\n$3\r\n100\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmd = try parser.parse_();
+
+    try std.testing.expectEqual(Command_.set, std.meta.activeTag(cmd));
+    try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
+    try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
+    try std.testing.expectEqual(100, cmd.set.px.?);
 }
 test "parsing get command" {
     const bytes = "*2\r\n$3\r\nGET\r\n$5\r\napple\r\n";
@@ -401,7 +477,7 @@ test "parsing replconf ack command" {
     const cmd = try parser.parse_();
 
     try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
-    try std.testing.expectEqualSlices(u8, "5", cmd.replconf.ack.?);
+    try std.testing.expectEqual(5, cmd.replconf.ack.?);
 }
 
 test "parsing replconf getack command" {

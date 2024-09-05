@@ -192,11 +192,6 @@ fn handle_connection(
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        std.debug.print(
-            "COMMANDS:{s}, Thread ID {any}\n",
-            .{ bytes_slice, std.Thread.getCurrentId() },
-        );
-
         try stdout.print("Connection received, buffer being read into...\n", .{});
         var parser = Parser.init(allocator, bytes_slice);
         var cmds = try parser._parse();
