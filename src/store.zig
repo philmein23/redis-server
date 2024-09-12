@@ -38,7 +38,7 @@ pub const RedisStore = struct {
         self: *RedisStore,
         key: []const u8,
         val: []const u8,
-        exp: ?i16,
+        exp: ?i64,
     ) !void {
         // self.mutex.lock();
         // defer self.mutex.unlock();

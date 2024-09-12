@@ -20,14 +20,14 @@ pub const Command_ = union(enum) {
 
     const Echo = []const u8;
 
-    const Wait = struct { num_replicas_to_ack: usize, exp: i16 };
+    const Wait = struct { num_replicas_to_ack: usize, exp: i64 };
 
     const Info = enum { replication };
 
     const Set = struct {
         key: []const u8,
         val: []const u8,
-        px: ?i16 = null,
+        px: ?i64 = null,
     };
     const Get = struct {
         key: []const u8,
