@@ -300,7 +300,7 @@ pub const Parser_ = struct {
                         const num = try std.fmt.parseInt(usize, cmd_iter.next().?, 10); // consume num rep ack val
 
                         _ = cmd_iter.next(); // consume wait val length token
-                        const exp = try std.fmt.parseInt(i16, cmd_iter.next().?, 10); // consume wait val
+                        const exp = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume wait val
 
                         return Command_{ .wait = .{
                             .num_replicas_to_ack = num,
