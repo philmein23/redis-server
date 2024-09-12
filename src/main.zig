@@ -225,7 +225,7 @@ fn handle_connection(
             .ping => {
                 switch (state.role) {
                     .master => {
-                        _ = try stream.write("+pong\r\n");
+                        _ = try stream.write("+PONG\r\n");
                     },
                     .slave => {
                         // if (state.cmd_bytes_count != null) {
