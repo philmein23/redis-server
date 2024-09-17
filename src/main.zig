@@ -228,13 +228,13 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            state.offset += bytes_read;
+                            state.offset += bytes_slice.len;
                         },
                     }
                 },
                 .set => {
                     try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
-                    state.offset += bytes_read;
+                    state.offset += bytes_slice.len;
 
                     switch (state.role) {
                         .master => {
@@ -276,7 +276,7 @@ fn handle_connection(
 
                                     _ = try stream.write(resp);
 
-                                    state.offset += resp.len;
+                                    state.offset += bytes_slice.len;
                                 },
                             }
                         },
