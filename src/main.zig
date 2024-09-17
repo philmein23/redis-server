@@ -230,10 +230,9 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            // if (state.cmd_bytes_count != null) {
-                            //     // TODO: use replica offset field instead
-                            //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                            // }
+                            if (state.replicas_2.get(stream.handle)) |replica| {
+                                replica.*.offset += bytes_slice.len;
+                            }
                         },
                     }
                 },
@@ -248,10 +247,9 @@ fn handle_connection(
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            //TODO: remove commented out code
-                            // if (state.cmd_bytes_count != null) {
-                            //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                            // }
+                            if (state.replicas_2.get(stream.handle)) |replica| {
+                                replica.*.offset += bytes_slice.len;
+                            }
                         },
                     }
                 },
@@ -278,20 +276,17 @@ fn handle_connection(
                                     try state.forward_cmd_2(get_ack_cmd);
                                 },
                                 .slave => {
-                                    if (get_ack_count == 0) {
-                                        state.cmd_bytes_count = 0;
-                                    }
-                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
+                                    const replica = state.replicas_2.get(stream.handle);
+                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{replica.?.offset});
                                     defer allocator.free(digit_to_bytes);
 
-                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
+                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, replica.?.offset });
                                     defer allocator.free(resp);
 
                                     _ = try stream.write(resp);
 
-                                    //TODO: remove commented out code
-                                    // state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                                    //
+                                    replica.?.offset += resp.len;
+
                                     get_ack_count += 1;
                                 },
                             }
