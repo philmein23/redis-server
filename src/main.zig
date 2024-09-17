@@ -114,7 +114,7 @@ fn handle_wait(
     allocator: std.mem.Allocator,
     stream: net.Stream,
     state: *ServerState,
-    cmd: *Command_,
+    cmd: *const Command_,
 ) !void {
     var now = std.time.milliTimestamp();
     const to_expire_at = now + cmd.wait.exp;
