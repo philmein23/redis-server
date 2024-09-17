@@ -276,7 +276,7 @@ fn handle_connection(
                                     try state.forward_cmd_2(get_ack_cmd);
                                 },
                                 .slave => {
-                                    const replica = state.replicas_2.get(stream.handle).?;
+                                    const replica = state.replicas_2.get(stream.handle) orelse return error.ReplicaNotFound;
                                     const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{replica.*.offset});
                                     defer allocator.free(digit_to_bytes);
 
