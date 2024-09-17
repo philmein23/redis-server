@@ -276,18 +276,19 @@ fn handle_connection(
                                     try state.forward_cmd_2(get_ack_cmd);
                                 },
                                 .slave => {
-                                    const replica = state.replicas_2.get(stream.handle) orelse return error.ReplicaNotFound;
-                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{replica.*.offset});
-                                    defer allocator.free(digit_to_bytes);
+                                    if (state.replicas_2.get(stream.handle)) |replica| {
+                                        const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{replica.*.offset});
+                                        defer allocator.free(digit_to_bytes);
 
-                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, replica.*.offset });
-                                    defer allocator.free(resp);
+                                        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, replica.*.offset });
+                                        defer allocator.free(resp);
 
-                                    _ = try stream.write(resp);
+                                        _ = try stream.write(resp);
 
-                                    replica.*.offset += resp.len;
+                                        replica.*.offset += resp.len;
 
-                                    get_ack_count += 1;
+                                        get_ack_count += 1;
+                                    }
                                 },
                             }
                         },
