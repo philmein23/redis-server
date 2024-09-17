@@ -230,27 +230,21 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            if (state.replicas_2.get(stream.handle)) |replica| {
-                                replica.*.offset += bytes_slice.len;
-                            }
+                            state.offset += bytes_slice.len;
                         },
                     }
                 },
                 .set => {
                     try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
+                    state.offset += bytes_slice.len;
 
                     switch (state.role) {
                         .master => {
                             try state.forward_cmd_2(bytes_slice);
-                            state.offset += bytes_slice.len;
 
                             _ = try stream.write("+OK\r\n");
                         },
-                        .slave => {
-                            if (state.replicas_2.get(stream.handle)) |replica| {
-                                replica.*.offset += bytes_slice.len;
-                            }
-                        },
+                        .slave => {},
                     }
                 },
                 .get => try handle_get(
@@ -276,19 +270,17 @@ fn handle_connection(
                                     try state.forward_cmd_2(get_ack_cmd);
                                 },
                                 .slave => {
-                                    if (state.replicas_2.get(stream.handle)) |replica| {
-                                        const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{replica.*.offset});
-                                        defer allocator.free(digit_to_bytes);
+                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.offset});
+                                    defer allocator.free(digit_to_bytes);
 
-                                        const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, replica.*.offset });
-                                        defer allocator.free(resp);
+                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
+                                    defer allocator.free(resp);
 
-                                        _ = try stream.write(resp);
+                                    _ = try stream.write(resp);
 
-                                        replica.*.offset += resp.len;
+                                    state.offset += resp.len;
 
-                                        get_ack_count += 1;
-                                    }
+                                    get_ack_count += 1;
                                 },
                             }
                         },
