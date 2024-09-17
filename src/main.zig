@@ -192,127 +192,130 @@ fn handle_connection(
 
         try stdout.print("Connection received, buffer being read into...{s}\n", .{bytes_slice});
         var parser = try Parser_.init(allocator, bytes_slice);
-        var cmd = try parser.parse_();
+        const cmds = try parser.parse_();
+        defer allocator.free(cmds);
 
-        switch (cmd) {
-            .config => {
-                switch (cmd.config) {
-                    .get => {
-                        const terminator = "\r\n";
-                        var buf: [100]u8 = undefined;
-                        if (std.mem.eql(u8, cmd.config.get, "dir")) {
-                            const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.len, terminator, state.dir, terminator });
-
-                            _ = try stream.write(resp);
-                        }
-                        if (std.mem.eql(u8, cmd.config.get, "dbfilename")) {}
-                    },
-                }
-            },
-            .echo => {
-                const terminator = "\r\n";
-
-                const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
-                    cmd.echo.len,
-                    terminator,
-                    cmd.echo,
-                    terminator,
-                });
-                defer allocator.free(resp);
-
-                _ = try stream.write(resp);
-            },
-            .ping => {
-                switch (state.role) {
-                    .master => {
-                        _ = try stream.write("+PONG\r\n");
-                    },
-                    .slave => {
-                        // if (state.cmd_bytes_count != null) {
-                        //     // TODO: use replica offset field instead
-                        //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                        // }
-                    },
-                }
-            },
-            .set => {
-                try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
-
-                switch (state.role) {
-                    .master => {
-                        try state.forward_cmd_2(bytes_slice);
-                        state.offset += bytes_slice.len;
-
-                        _ = try stream.write("+OK\r\n");
-                    },
-                    .slave => {
-                        //TODO: remove commented out code
-                        // if (state.cmd_bytes_count != null) {
-                        //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                        // }
-                    },
-                }
-            },
-            .get => try handle_get(
-                stream,
-                allocator,
-                store,
-                cmd.get.key,
-            ),
-            .info => try handle_info(
-                stream,
-                allocator,
-                state,
-            ),
-            .wait => {
-                try handle_wait(allocator, stream, state, &cmd);
-            },
-            .replconf => {
-                switch (cmd.replconf) {
-                    .getack => {
-                        switch (state.role) {
-                            .master => {
-                                const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
-                                try state.forward_cmd_2(get_ack_cmd);
-                            },
-                            .slave => {
-                                if (get_ack_count == 0) {
-                                    state.cmd_bytes_count = 0;
-                                }
-                                const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
-                                defer allocator.free(digit_to_bytes);
-
-                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
-                                defer allocator.free(resp);
+        for (cmds) |cmd| {
+            switch (cmd) {
+                .config => {
+                    switch (cmd.config) {
+                        .get => {
+                            const terminator = "\r\n";
+                            var buf: [100]u8 = undefined;
+                            if (std.mem.eql(u8, cmd.config.get, "dir")) {
+                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.len, terminator, state.dir, terminator });
 
                                 _ = try stream.write(resp);
+                            }
+                            if (std.mem.eql(u8, cmd.config.get, "dbfilename")) {}
+                        },
+                    }
+                },
+                .echo => {
+                    const terminator = "\r\n";
 
-                                //TODO: remove commented out code
-                                // state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                                //
-                                get_ack_count += 1;
-                            },
-                        }
-                    },
-                    .ack => {
-                        if (state.replicas_2.get(stream.handle)) |replica| {
-                            replica.*.offset += cmd.replconf.ack;
-                        }
-                    },
-                    else => {
-                        _ = try stream.write("+OK\r\n");
-                    },
-                }
-            },
-            .psync => {
-                try handle_psync(
-                    allocator,
+                    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
+                        cmd.echo.len,
+                        terminator,
+                        cmd.echo,
+                        terminator,
+                    });
+                    defer allocator.free(resp);
+
+                    _ = try stream.write(resp);
+                },
+                .ping => {
+                    switch (state.role) {
+                        .master => {
+                            _ = try stream.write("+PONG\r\n");
+                        },
+                        .slave => {
+                            // if (state.cmd_bytes_count != null) {
+                            //     // TODO: use replica offset field instead
+                            //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                            // }
+                        },
+                    }
+                },
+                .set => {
+                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
+
+                    switch (state.role) {
+                        .master => {
+                            try state.forward_cmd_2(bytes_slice);
+                            state.offset += bytes_slice.len;
+
+                            _ = try stream.write("+OK\r\n");
+                        },
+                        .slave => {
+                            //TODO: remove commented out code
+                            // if (state.cmd_bytes_count != null) {
+                            //     state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                            // }
+                        },
+                    }
+                },
+                .get => try handle_get(
                     stream,
+                    allocator,
+                    store,
+                    cmd.get.key,
+                ),
+                .info => try handle_info(
+                    stream,
+                    allocator,
                     state,
-                );
+                ),
+                .wait => {
+                    try handle_wait(allocator, stream, state, &cmd);
+                },
+                .replconf => {
+                    switch (cmd.replconf) {
+                        .getack => {
+                            switch (state.role) {
+                                .master => {
+                                    const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
+                                    try state.forward_cmd_2(get_ack_cmd);
+                                },
+                                .slave => {
+                                    if (get_ack_count == 0) {
+                                        state.cmd_bytes_count = 0;
+                                    }
+                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
+                                    defer allocator.free(digit_to_bytes);
 
-                try state.add_replica_2(stream);
-            },
+                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
+                                    defer allocator.free(resp);
+
+                                    _ = try stream.write(resp);
+
+                                    //TODO: remove commented out code
+                                    // state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
+                                    //
+                                    get_ack_count += 1;
+                                },
+                            }
+                        },
+                        .ack => {
+                            if (state.replicas_2.get(stream.handle)) |replica| {
+                                replica.*.offset += cmd.replconf.ack;
+                            }
+                        },
+                        else => {
+                            _ = try stream.write("+OK\r\n");
+                        },
+                    }
+                },
+                .psync => {
+                    try handle_psync(
+                        allocator,
+                        stream,
+                        state,
+                    );
+
+                    try state.add_replica_2(stream);
+                },
+            }
         }
     }
 }
