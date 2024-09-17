@@ -173,8 +173,6 @@ fn handle_connection(
     var bytes = std.ArrayList(u8).init(allocator);
     defer bytes.deinit();
 
-    var get_ack_count: usize = 0;
-
     while (true) {
         std.debug.print("ABOUT TO READ - ROLE: {any}\n", .{state.role});
         const bytes_read = reader.read(&buffer) catch |err| switch (err) {
@@ -230,13 +228,13 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            state.offset += bytes_slice.len;
+                            state.offset += bytes_read;
                         },
                     }
                 },
                 .set => {
                     try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
-                    state.offset += bytes_slice.len;
+                    state.offset += bytes_read;
 
                     switch (state.role) {
                         .master => {
@@ -279,8 +277,6 @@ fn handle_connection(
                                     _ = try stream.write(resp);
 
                                     state.offset += resp.len;
-
-                                    get_ack_count += 1;
                                 },
                             }
                         },
