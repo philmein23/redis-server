@@ -340,10 +340,10 @@ pub const Parser_ = struct {
                                 if (std.ascii.eqlIgnoreCase(cmd_iter.peek().?, "px")) {
                                     _ = cmd_iter.next(); // consume set px token
                                     cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
-                                    try self.commands.append(cmd);
                                 }
-                                continue;
                             }
+                            try self.commands.append(cmd);
+                            continue;
                         }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "get")) {
