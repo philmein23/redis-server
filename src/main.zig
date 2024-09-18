@@ -229,7 +229,7 @@ fn handle_connection(
                         },
                         .slave => {
                             state.offset += bytes_slice.len;
-                            std.debug.print("SLAVE RECIEVED PING {d}\n", .{state.pffset});
+                            std.debug.print("SLAVE RECIEVED PING {d}\n", .{state.offset});
                         },
                     }
                 },
@@ -244,7 +244,7 @@ fn handle_connection(
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            std.debug.print("SLAVE RECIEVED SET {d}\n", .{state.pffset});
+                            std.debug.print("SLAVE RECIEVED SET {d}\n", .{state.offset});
                         },
                     }
                 },
