@@ -234,11 +234,11 @@ fn handle_connection(
                 },
                 .set => {
                     try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
-                    state.offset += bytes_slice.len;
 
                     switch (state.role) {
                         .master => {
                             try state.forward_cmd_2(bytes_slice);
+                            state.offset += bytes_slice.len;
 
                             _ = try stream.write("+OK\r\n");
                         },
