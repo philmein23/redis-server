@@ -334,7 +334,6 @@ pub const Parser_ = struct {
                                 .val = val,
                             } };
 
-                            std.debug.print("DEBUG SET PEEK {s}\n", .{cmd_iter.peek()});
                             if (cmd_iter.peek() != null and cmd_iter.peek().?.len == 2) {
                                 _ = cmd_iter.next(); // consume set some len token
 
