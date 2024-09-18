@@ -244,7 +244,8 @@ fn handle_connection(
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            std.debug.print("SLAVE RECIEVED SET {d}\n", .{state.offset});
+                            std.debug.print("SLAVE RECIEVED SET {s}\n", .{bytes_slice});
+                            std.debug.print("SLAVE RECIEVED SET LEN {d}\n", .{bytes_slice.len});
                         },
                     }
                 },
