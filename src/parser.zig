@@ -335,11 +335,14 @@ pub const Parser_ = struct {
                             } };
 
                             const maybe_asterisk = std.mem.indexOf(u8, cmd_iter.peek().?, "*");
+                            std.debug.print("SET PEEK {s}\n", .{cmd_iter.peek().?});
                             if (maybe_asterisk == null and cmd_iter.peek().?.len > 0) {
                                 _ = cmd_iter.next(); // consume set some len token
 
+                                std.debug.print("SET PEEK HERE {s}\n", .{cmd_iter.peek().?});
                                 if (std.ascii.eqlIgnoreCase(cmd_iter.peek().?, "px")) {
                                     _ = cmd_iter.next(); // consume set px token
+                                    _ = cmd_iter.next(); // consume set px val len token
                                     cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
                                 }
                             }
