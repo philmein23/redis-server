@@ -339,7 +339,7 @@ pub const Parser_ = struct {
                                 _ = cmd_iter.next(); // consume set px token
                                 _ = cmd_iter.next(); // consume set px val length token
 
-                                cmd.set.px = try std.fmt.parseInt(i16, cmd_iter.next().?, 10); // consume px val token
+                                cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
                             }
 
                             try self.commands.append(cmd);
