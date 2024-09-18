@@ -246,6 +246,7 @@ fn handle_connection(
                         .slave => {
                             std.debug.print("SLAVE RECIEVED SET {s}\n", .{bytes_slice});
                             std.debug.print("SLAVE RECIEVED SET LEN {d}\n", .{bytes_slice.len});
+                            state.offset += bytes_slice.len;
                         },
                     }
                 },
