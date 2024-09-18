@@ -334,8 +334,8 @@ pub const Parser_ = struct {
                                 .val = val,
                             } };
 
-                            const maybe_needle = std.mem.indexOf(u8, cmd_iter.peek().?, "*");
-                            if (maybe_needle == null) {
+                            const maybe_asterisk = std.mem.indexOf(u8, cmd_iter.peek().?, "*");
+                            if (maybe_asterisk == null and cmd_iter.peek().?.len > 0) {
                                 _ = cmd_iter.next(); // consume set some len token
 
                                 if (std.ascii.eqlIgnoreCase(cmd_iter.peek().?, "px")) {
