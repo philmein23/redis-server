@@ -334,17 +334,17 @@ pub const Parser_ = struct {
                                 .val = val,
                             } };
 
-                            std.debug.print("DEBUG SET PEEK {?s}\n", .{cmd_iter.peek()});
+                            std.debug.print("DEBUG SET PEEK {s}\n", .{cmd_iter.peek()});
                             if (cmd_iter.peek() != null and cmd_iter.peek().?.len == 2) {
-                                _ = cmd_iter.next(); // consume set px len token
-                                _ = cmd_iter.next(); // consume set px token
-                                _ = cmd_iter.next(); // consume set px val length token
+                                _ = cmd_iter.next(); // consume set some len token
 
-                                cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
+                                if (std.ascii.eqlIgnoreCase(cmd_iter.peek().?, "px")) {
+                                    _ = cmd_iter.next(); // consume set px token
+                                    cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
+                                    try self.commands.append(cmd);
+                                }
+                                continue;
                             }
-
-                            try self.commands.append(cmd);
-                            continue;
                         }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "get")) {
