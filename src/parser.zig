@@ -334,7 +334,7 @@ pub const Parser_ = struct {
                                 .val = val,
                             } };
 
-                            if (cmd_iter.peek() != null and cmd_iter.peek().?.len == 2 and !std.mem.eql(cmd_iter.peek().?, "*")) {
+                            if (cmd_iter.peek() != null and cmd_iter.peek().?.len == 2 and !std.mem.eql(u8, cmd_iter.peek().?, "*")) {
                                 _ = cmd_iter.next(); // consume set some len token
 
                                 if (std.ascii.eqlIgnoreCase(cmd_iter.peek().?, "px")) {
