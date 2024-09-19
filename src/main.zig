@@ -229,7 +229,7 @@ fn handle_connection(
                         },
                         .slave => {
                             state.offset += bytes_slice.len;
-                            std.debug.print("SLAVE RECIEVED PING {d}\n", .{state.offset});
+                            std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
                         },
                     }
                 },
@@ -244,9 +244,8 @@ fn handle_connection(
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            std.debug.print("SLAVE RECIEVED SET {s}\n", .{bytes_slice});
-                            std.debug.print("SLAVE RECIEVED SET LEN {d}\n", .{bytes_slice.len});
                             state.offset += bytes_slice.len;
+                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
                         },
                     }
                 },
@@ -283,7 +282,7 @@ fn handle_connection(
                                     _ = try stream.write(resp);
 
                                     state.offset += bytes_slice.len;
-                                    std.debug.print("REPLCONF GETACK - AFTER {d}\n", .{state.offset});
+                                    std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
                                 },
                             }
                         },
