@@ -282,7 +282,7 @@ fn handle_connection(
                                     _ = try stream.write(resp);
 
                                     std.debug.print("REPLCONF GETACK - BEFORE {d}\n", .{state.offset});
-                                    state.offset += bytes_slice.len;
+                                    state.offset += bytes_slice.len - 37;
                                     std.debug.print("REPLCONF GETACK - AFTER {d}\n", .{state.offset});
                                 },
                             }
