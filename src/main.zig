@@ -277,12 +277,12 @@ fn handle_connection(
                                     defer allocator.free(digit_to_bytes);
 
                                     const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
+                                    std.debug.print("REPLCONF GETACK - BEFORE {d}\n", .{state.offset});
                                     defer allocator.free(resp);
 
                                     _ = try stream.write(resp);
 
-                                    std.debug.print("REPLCONF GETACK - BEFORE {d}\n", .{state.offset});
-                                    state.offset += bytes_slice.len - 37;
+                                    state.offset += bytes_slice.len;
                                     std.debug.print("REPLCONF GETACK - AFTER {d}\n", .{state.offset});
                                 },
                             }
