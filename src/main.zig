@@ -175,14 +175,7 @@ fn handle_connection(
 
     while (true) {
         std.debug.print("ABOUT TO READ - ROLE: {any}\n", .{state.role});
-        const bytes_read = reader.read(&buffer) catch |err| switch (err) {
-            error.ConnectionResetByPeer => {
-                std.debug.print("CONNECTION RESET BY PEER ERROR - THREAD ID: {any}\n", .{std.Thread.getCurrentId()});
-
-                return err;
-            },
-            else => |e| return e,
-        };
+        const bytes_read = try reader.read(&buffer);
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
@@ -228,8 +221,8 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            state.offset += bytes_slice.len;
-                            std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
+                            state.offset += parser.cmd_offset;
+                            std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
                         },
                     }
                 },
@@ -244,8 +237,8 @@ fn handle_connection(
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            state.offset += bytes_slice.len;
-                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
+                            state.offset += parser.cmd_offset;
+                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
                         },
                     }
                 },
@@ -276,13 +269,13 @@ fn handle_connection(
                                     defer allocator.free(digit_to_bytes);
 
                                     const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
-                                    std.debug.print("REPLCONF GETACK - BEFORE {d}\n", .{state.offset});
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n BEFORE CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
                                     defer allocator.free(resp);
 
                                     _ = try stream.write(resp);
 
                                     state.offset += bytes_slice.len;
-                                    std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ bytes_slice.len, state.offset });
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
                                 },
                             }
                         },
