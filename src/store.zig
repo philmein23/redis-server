@@ -38,7 +38,7 @@ pub const RedisStore = struct {
         self: *RedisStore,
         key: []const u8,
         val: []const u8,
-        exp: ?[]const u8,
+        exp: ?i64,
     ) !void {
         // self.mutex.lock();
         // defer self.mutex.unlock();
@@ -46,9 +46,8 @@ pub const RedisStore = struct {
         var rv = RedisVal{ .val = val };
         if (exp) |e| {
             const now = time.milliTimestamp();
-            const parse_to_int = try std.fmt.parseInt(i64, e, 10);
 
-            rv.expiry = now + parse_to_int;
+            rv.expiry = now + e;
         }
         try self.table.put(key, rv);
     }

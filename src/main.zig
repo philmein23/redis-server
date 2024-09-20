@@ -7,6 +7,8 @@ const Tag = @import("type.zig").Tag;
 const ServerState = @import("type.zig").ServerState;
 const RedisStore = @import("store.zig").RedisStore;
 const Parser = @import("parser.zig").Parser;
+const Parser_ = @import("parser.zig").Parser_;
+const Command_ = @import("parser.zig").Command_;
 const mutex = std.Thread.Mutex;
 
 fn sync_rdb_with_master() !void {
@@ -54,9 +56,9 @@ fn handle_get(
     stream: net.Stream,
     allocator: std.mem.Allocator,
     store: *RedisStore,
-    key: Arg,
+    key: []const u8,
 ) !void {
-    const val = store.get(key.content) catch |err| switch (err) {
+    const val = store.get(key) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
             _ = try stream.write("$-1\r\n");
 
@@ -78,13 +80,12 @@ fn handle_psync(
     allocator: std.mem.Allocator,
     stream: net.Stream,
     state: *ServerState,
-    args: []const Arg,
 ) !void {
     if (state.replication_id) |rep_id| {
         const resp = try std.fmt.allocPrint(
             allocator,
-            "+FULLRESYNC {s} {s}\r\n",
-            .{ rep_id, args[1].content },
+            "+FULLRESYNC {s} 0\r\n",
+            .{rep_id},
         );
         defer allocator.free(resp);
         _ = try stream.write(resp);
@@ -113,13 +114,10 @@ fn handle_wait(
     allocator: std.mem.Allocator,
     stream: net.Stream,
     state: *ServerState,
-    args: []const Arg,
+    cmd: *const Command_,
 ) !void {
-    const num_replicas_to_ack = try std.fmt.parseInt(usize, args[0].content, 10);
-    const block_until = try std.fmt.parseInt(i64, args[1].content, 10);
-
     var now = std.time.milliTimestamp();
-    const to_expire_at = now + block_until;
+    const to_expire_at = now + cmd.wait.exp;
 
     const get_ack_cmd = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
     try state.forward_cmd_2(get_ack_cmd);
@@ -133,7 +131,7 @@ fn handle_wait(
                 num_replicas_acked += 1;
             }
         }
-        if (num_replicas_acked >= num_replicas_to_ack) {
+        if (num_replicas_acked >= cmd.wait.num_replicas_to_ack) {
             const resp = try std.fmt.allocPrint(allocator, ":{d}\r\n", .{num_replicas_acked});
             defer allocator.free(resp);
 
@@ -175,138 +173,127 @@ fn handle_connection(
     var bytes = std.ArrayList(u8).init(allocator);
     defer bytes.deinit();
 
-    var get_ack_count: usize = 0;
-
     while (true) {
         std.debug.print("ABOUT TO READ - ROLE: {any}\n", .{state.role});
-        const bytes_read = reader.read(&buffer) catch |err| switch (err) {
-            error.ConnectionResetByPeer => {
-                std.debug.print("CONNECTION RESET BY PEER ERROR - THREAD ID: {any}\n", .{std.Thread.getCurrentId()});
-
-                return err;
-            },
-            else => |e| return e,
-        };
+        const bytes_read = try reader.read(&buffer);
         if (bytes_read == 0) break;
 
         try bytes.appendSlice(buffer[0..bytes_read]);
         const bytes_slice = try bytes.toOwnedSliceSentinel(0);
 
-        try stdout.print("Connection received, buffer being read into...\n", .{});
-        var parser = Parser.init(allocator, bytes_slice);
-        var cmds = try parser._parse();
-        defer cmds.deinit();
+        try stdout.print("Connection received, buffer being read into...{s}\n", .{bytes_slice});
+        var parser = try Parser_.init(allocator, bytes_slice);
+        const cmds = try parser.parse_();
+        defer allocator.free(cmds);
 
-        for (cmds.items) |cmd| {
-            const opt = cmd.opt orelse null;
+        for (cmds) |cmd| {
+            switch (cmd) {
+                .config => {
+                    switch (cmd.config) {
+                        .get => {
+                            const terminator = "\r\n";
+                            var buf: [100]u8 = undefined;
+                            if (std.mem.eql(u8, cmd.config.get, "dir")) {
+                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.len, terminator, state.dir, terminator });
 
-            switch (cmd.tag) {
-                Tag.echo => {
-                    const echo_arg = cmd.args[0].content;
+                                _ = try stream.write(resp);
+                            }
+                            if (std.mem.eql(u8, cmd.config.get, "dbfilename")) {}
+                        },
+                    }
+                },
+                .echo => {
                     const terminator = "\r\n";
-                    const length = echo_arg.len;
 
                     const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{
-                        length,
+                        cmd.echo.len,
                         terminator,
-                        echo_arg,
+                        cmd.echo,
                         terminator,
                     });
                     defer allocator.free(resp);
 
                     _ = try stream.write(resp);
                 },
-                Tag.ping => {
+                .ping => {
                     switch (state.role) {
                         .master => {
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            if (state.cmd_bytes_count != null) {
-                                // TODO: use replica offset field instead
-                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                            }
+                            state.offset += cmd.ping.offset;
+                            std.debug.print("SLAVE RECIEVED PING- COUNT: {d}\nCURRENT OFFSET {d}\n", .{ cmd.ping.offset, state.offset });
                         },
                     }
                 },
-                Tag.set => {
-                    if (opt != null) {
-                        try store.set(cmd.args[0].content, cmd.args[1].content, opt.?.content);
-                    } else {
-                        try store.set(cmd.args[0].content, cmd.args[1].content, null);
-                    }
+                .set => {
+                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
 
                     switch (state.role) {
                         .master => {
                             try state.forward_cmd_2(bytes_slice);
-                            state.offset += bytes_slice.len;
+                            state.offset += cmd.set.offset;
 
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            std.debug.print("SET- SLAVE {s}\n", .{bytes_slice});
-                            if (state.cmd_bytes_count != null) {
-                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-                            }
+                            state.offset += cmd.set.offset;
+                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.set.offset, state.offset });
                         },
                     }
                 },
-                Tag.get => try handle_get(
+                .get => try handle_get(
                     stream,
                     allocator,
                     store,
-                    cmd.args[0],
+                    cmd.get.key,
                 ),
-                Tag.info => try handle_info(
+                .info => try handle_info(
                     stream,
                     allocator,
                     state,
                 ),
-                Tag.wait => {
-                    try handle_wait(allocator, stream, state, &cmd.args);
+                .wait => {
+                    try handle_wait(allocator, stream, state, &cmd);
                 },
-                Tag.replconf => {
-                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "listening-port") or std.ascii.eqlIgnoreCase(cmd.args[0].content, "capa")) {
-                        _ = try stream.write("+OK\r\n");
-                    }
+                .replconf => {
+                    switch (cmd.replconf) {
+                        .getack => {
+                            switch (state.role) {
+                                .master => {
+                                    const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
+                                    try state.forward_cmd_2(get_ack_cmd);
+                                },
+                                .slave => {
+                                    const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.offset});
+                                    defer allocator.free(digit_to_bytes);
 
-                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "getack") and std.mem.eql(u8, cmd.args[1].content, "*")) {
-                        switch (state.role) {
-                            .master => {
-                                const get_ack_cmd = "*3\r\n$8\r\nreplconf\r\n$6\r\ngetack\r\n$1\r\n*\r\n";
-                                try state.forward_cmd_2(get_ack_cmd);
-                            },
-                            .slave => {
-                                if (get_ack_count == 0) {
-                                    state.cmd_bytes_count = 0;
-                                }
-                                const digit_to_bytes = try std.fmt.allocPrint(allocator, "{d}", .{state.cmd_bytes_count.?});
-                                defer allocator.free(digit_to_bytes);
+                                    const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n BEFORE CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
+                                    defer allocator.free(resp);
 
-                                const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.cmd_bytes_count.? });
-                                defer allocator.free(resp);
+                                    _ = try stream.write(resp);
 
-                                _ = try stream.write(resp);
-
-                                state.cmd_bytes_count = state.cmd_bytes_count.? + cmd.byte_count;
-
-                                get_ack_count += 1;
-                            },
-                        }
-                    }
-
-                    if (std.ascii.eqlIgnoreCase(cmd.args[0].content, "ack")) {
-                        if (state.replicas_2.get(stream.handle)) |replica| {
-                            replica.*.offset += try std.fmt.parseInt(usize, cmd.args[1].content, 10);
-                        }
+                                    state.offset += cmd.replconf.getack.offset;
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
+                                },
+                            }
+                        },
+                        .ack => {
+                            if (state.replicas_2.get(stream.handle)) |replica| {
+                                replica.*.offset += cmd.replconf.ack;
+                            }
+                        },
+                        else => {
+                            _ = try stream.write("+OK\r\n");
+                        },
                     }
                 },
-                Tag.psync => {
+                .psync => {
                     try handle_psync(
                         allocator,
                         stream,
                         state,
-                        &cmd.args,
                     );
 
                     try state.add_replica_2(stream);
@@ -326,7 +313,7 @@ pub fn main() !void {
     var state = ServerState.init(allocator);
     defer state.deinit();
 
-    try handle_args(&state);
+    try handle_args(allocator, &state);
 
     if (state.role == .master) {
         try state.generate_master_replication_id();
@@ -384,11 +371,29 @@ pub fn main() !void {
     }
 }
 
-fn handle_args(state: *ServerState) !void {
+fn handle_args(allocator: std.mem.Allocator, state: *ServerState) !void {
     var args = std.process.args();
     _ = args.skip();
 
     while (args.next()) |arg| {
+        if (std.ascii.eqlIgnoreCase(arg, "--dir")) {
+            if (args.next()) |dir_name| {
+                if (std.ascii.eqlIgnoreCase(args.next().?, "--dbfilename")) {
+                    if (args.next()) |filename| {
+                        const cwd = std.fs.cwd();
+
+                        try cwd.makePath(dir_name);
+
+                        const file = try cwd.createFile(try std.fs.path.join(allocator, &[_][]const u8{ dir_name, filename }), .{});
+                        defer file.close();
+
+                        state.dir = dir_name;
+                        state.dbfilename = filename;
+                    }
+                }
+            }
+        }
+
         if (std.ascii.eqlIgnoreCase(arg, "--port")) {
             if (args.next()) |p| {
                 state.port = try std.fmt.parseInt(u16, p, 10);
