@@ -6,7 +6,9 @@ const RedisStore = @import("store.zig").RedisStore;
 const std = @import("std");
 
 pub const Command_ = union(enum) {
-    ping,
+    ping: struct {
+        offset: usize = 0,
+    },
     info: Info,
     set: Set,
     get: Get,
@@ -28,6 +30,7 @@ pub const Command_ = union(enum) {
         key: []const u8,
         val: []const u8,
         px: ?i64 = null,
+        offset: usize = 0,
     };
     const Get = struct {
         key: []const u8,
@@ -37,7 +40,10 @@ pub const Command_ = union(enum) {
         listening_port,
         capa_psync2,
         ack: usize,
-        getack: []const u8,
+        getack: struct {
+            val: []const u8,
+            offset: usize = 0,
+        },
     };
 
     const Psync = struct { replication_id: []const u8, offset: isize };
@@ -249,7 +255,6 @@ fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag2) !
 pub const Parser_ = struct {
     source: [:0]const u8,
     commands: std.ArrayList(Command_),
-    cmd_offset: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, source: [:0]const u8) !Parser_ {
         const cmds = std.ArrayList(Command_).init(gpa);
@@ -266,7 +271,6 @@ pub const Parser_ = struct {
 
         while (true) {
             // std.debug.print("BEGIN PARSE - CMD ITER:\nCURR INDEX: {d}\n CURR VAL: {d}\n", .{ cmd_iter.index.?, self.source[cmd_iter.index.?] });
-            const start = cmd_iter.index.?;
             if (cmd_iter.peek() == null or cmd_iter.peek().?.len == 0) {
                 _ = cmd_iter.next();
 
@@ -277,6 +281,7 @@ pub const Parser_ = struct {
 
                 switch (part) {
                     '*' => {
+                        const start = cmd_iter.index.?;
                         _ = cmd_iter.next(); // consume RESP type
                         _ = cmd_iter.next(); // consume cmd length token
 
@@ -349,9 +354,8 @@ pub const Parser_ = struct {
                                     cmd.set.px = try std.fmt.parseInt(i64, cmd_iter.next().?, 10); // consume px val token
                                 }
                             }
+                            cmd.set.offset = self.source[start..cmd_iter.index.?].len;
                             try self.commands.append(cmd);
-
-                            self.cmd_offset += self.source[start..cmd_iter.index.?].len;
 
                             continue;
                         }
@@ -375,9 +379,9 @@ pub const Parser_ = struct {
                         }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "ping")) {
-                            try self.commands.append(Command_{ .ping = {} });
-
-                            self.cmd_offset += self.source[start..cmd_iter.index.?].len;
+                            try self.commands.append(
+                                Command_{ .ping = .{ .offset = self.source[start..cmd_iter.index.?].len } },
+                            );
 
                             continue;
                         }
@@ -403,8 +407,11 @@ pub const Parser_ = struct {
                                 _ = cmd_iter.next(); // consume length token
                                 const getack_asterisk = cmd_iter.next().?; // consume asterisk
 
-                                try self.commands.append(Command_{ .replconf = .{ .getack = getack_asterisk } });
-                                self.cmd_offset += self.source[start..cmd_iter.index.?].len;
+                                try self.commands.append(
+                                    Command_{
+                                        .replconf = .{ .getack = .{ .offset = self.source[start..cmd_iter.index.?].len, .val = getack_asterisk } },
+                                    },
+                                );
 
                                 continue;
                             } else if (std.ascii.eqlIgnoreCase(subcommand, "ack")) {
@@ -518,6 +525,7 @@ test "parsing set command with expiry option" {
         try std.testing.expectEqualSlices(u8, "apple", cmd.set.key);
         try std.testing.expectEqualSlices(u8, "pear", cmd.set.val);
         try std.testing.expectEqual(100, cmd.set.px.?);
+        try std.testing.expectEqual(bytes.len, cmd.set.offset);
     }
 }
 test "parsing get command" {
@@ -544,6 +552,7 @@ test "parsing ping command" {
 
     for (cmds) |cmd| {
         try std.testing.expectEqual(Command_.ping, std.meta.activeTag(cmd));
+        try std.testing.expectEqual(bytes.len, cmd.ping.offset);
     }
 }
 
@@ -586,6 +595,20 @@ test "parsing replconf capa psync2 command" {
     for (cmds) |cmd| {
         try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
         try std.testing.expectEqual({}, cmd.replconf.capa_psync2);
+    }
+}
+test "parsing replconf getack command" {
+    const bytes = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, bytes);
+
+    const cmds = try parser.parse_();
+    defer gpa.free(cmds);
+
+    for (cmds) |cmd| {
+        try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
+        try std.testing.expectEqualSlices(u8, "*", cmd.replconf.getack.val);
+        try std.testing.expectEqual(bytes.len, cmd.replconf.getack.offset);
     }
 }
 

@@ -221,8 +221,8 @@ fn handle_connection(
                             _ = try stream.write("+PONG\r\n");
                         },
                         .slave => {
-                            state.offset += parser.cmd_offset;
-                            std.debug.print("SLAVE RECIEVED PING -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
+                            state.offset += cmd.ping.offset;
+                            std.debug.print("SLAVE RECIEVED PING- COUNT: {d}\nCURRENT OFFSET {d}\n", .{ cmd.ping.offset, state.offset });
                         },
                     }
                 },
@@ -232,13 +232,13 @@ fn handle_connection(
                     switch (state.role) {
                         .master => {
                             try state.forward_cmd_2(bytes_slice);
-                            state.offset += bytes_slice.len;
+                            state.offset += cmd.set.offset;
 
                             _ = try stream.write("+OK\r\n");
                         },
                         .slave => {
-                            state.offset += parser.cmd_offset;
-                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
+                            state.offset += cmd.set.offset;
+                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.set.offset, state.offset });
                         },
                     }
                 },
@@ -269,13 +269,13 @@ fn handle_connection(
                                     defer allocator.free(digit_to_bytes);
 
                                     const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
-                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n BEFORE CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n BEFORE CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
                                     defer allocator.free(resp);
 
                                     _ = try stream.write(resp);
 
-                                    state.offset += bytes_slice.len;
-                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n CURRENT OFFSET {d}\n", .{ parser.cmd_offset, state.offset });
+                                    state.offset += cmd.replconf.getack.offset;
+                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
                                 },
                             }
                         },
