@@ -8,6 +8,7 @@ pub const RedisStore = struct {
     const RedisVal = struct {
         val: []const u8,
         expiry: ?i64 = null,
+        db_index: ?u8 = null,
     };
 
     pub fn init(alloc: std.mem.Allocator) RedisStore {
@@ -39,11 +40,12 @@ pub const RedisStore = struct {
         key: []const u8,
         val: []const u8,
         exp: ?i64,
+        db_index: ?u8,
     ) !void {
         // self.mutex.lock();
         // defer self.mutex.unlock();
 
-        var rv = RedisVal{ .val = val };
+        var rv = RedisVal{ .val = val, .db_index = db_index orelse null };
         if (exp) |e| {
             const now = time.milliTimestamp();
 
