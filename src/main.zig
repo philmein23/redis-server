@@ -222,7 +222,6 @@ fn handle_connection(
                         },
                         .slave => {
                             state.offset += cmd.ping.offset;
-                            std.debug.print("SLAVE RECIEVED PING- COUNT: {d}\nCURRENT OFFSET {d}\n", .{ cmd.ping.offset, state.offset });
                         },
                     }
                 },
@@ -238,7 +237,6 @@ fn handle_connection(
                         },
                         .slave => {
                             state.offset += cmd.set.offset;
-                            std.debug.print("SLAVE RECIEVED SET -COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.set.offset, state.offset });
                         },
                     }
                 },
@@ -269,13 +267,11 @@ fn handle_connection(
                                     defer allocator.free(digit_to_bytes);
 
                                     const resp = try std.fmt.allocPrint(allocator, "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n${d}\r\n{d}\r\n", .{ digit_to_bytes.len, state.offset });
-                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n BEFORE CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
                                     defer allocator.free(resp);
 
                                     _ = try stream.write(resp);
 
                                     state.offset += cmd.replconf.getack.offset;
-                                    std.debug.print("SLAVE RECIEVED GETACK - COUNT: {d}\n CURRENT OFFSET {d}\n", .{ cmd.replconf.getack.offset, state.offset });
                                 },
                             }
                         },
@@ -284,11 +280,23 @@ fn handle_connection(
                                 replica.*.offset += cmd.replconf.ack;
                             }
                         },
+
                         else => {
                             _ = try stream.write("+OK\r\n");
                         },
                     }
                 },
+                // .save => {
+                //     const cwd = std.fs.cwd();
+                //
+                //     try cwd.makePath(state.dir);
+                //
+                //     const file = try cwd.createFile(try std.fs.path.join(allocator, &[_][]const u8{ state.dir, state.dbfilename }), .{});
+                //     defer file.close();
+                //
+                //     const header = [_]u8{ 'R', 'E', 'D', 'I', 'S', '0', '0', '1', '1', '2' };
+                //     _ = try file.writeAll(&header);
+                // },
                 .psync => {
                     try handle_psync(
                         allocator,
@@ -313,7 +321,7 @@ pub fn main() !void {
     var state = ServerState.init(allocator);
     defer state.deinit();
 
-    try handle_args(allocator, &state);
+    try handle_args(&state);
 
     if (state.role == .master) {
         try state.generate_master_replication_id();
@@ -371,7 +379,7 @@ pub fn main() !void {
     }
 }
 
-fn handle_args(allocator: std.mem.Allocator, state: *ServerState) !void {
+fn handle_args(state: *ServerState) !void {
     var args = std.process.args();
     _ = args.skip();
 
@@ -380,13 +388,6 @@ fn handle_args(allocator: std.mem.Allocator, state: *ServerState) !void {
             if (args.next()) |dir_name| {
                 if (std.ascii.eqlIgnoreCase(args.next().?, "--dbfilename")) {
                     if (args.next()) |filename| {
-                        const cwd = std.fs.cwd();
-
-                        try cwd.makePath(dir_name);
-
-                        const file = try cwd.createFile(try std.fs.path.join(allocator, &[_][]const u8{ dir_name, filename }), .{});
-                        defer file.close();
-
                         state.dir = dir_name;
                         state.dbfilename = filename;
                     }

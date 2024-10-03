@@ -17,6 +17,7 @@ pub const Command_ = union(enum) {
     wait: Wait,
     echo: Echo,
     config: Config,
+    // save,
 
     const Config = union(enum) { get: []const u8 };
 
@@ -270,7 +271,6 @@ pub const Parser_ = struct {
         var cmd_iter = std.mem.splitSequence(u8, self.source, "\r\n");
 
         while (true) {
-            // std.debug.print("BEGIN PARSE - CMD ITER:\nCURR INDEX: {d}\n CURR VAL: {d}\n", .{ cmd_iter.index.?, self.source[cmd_iter.index.?] });
             if (cmd_iter.peek() == null or cmd_iter.peek().?.len == 0) {
                 _ = cmd_iter.next();
 
@@ -286,6 +286,13 @@ pub const Parser_ = struct {
                         _ = cmd_iter.next(); // consume cmd length token
 
                         const cmd_string = cmd_iter.next().?; // consume cmd string
+                        //
+                        // if (std.ascii.eqlIgnoreCase(cmd_string, "save")) {
+                        //     _ = cmd_iter.next(); // consume length token
+                        //
+                        //     try self.commands.append(Command_{ .save = {} });
+                        //     continue;
+                        // }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "config")) {
                             _ = cmd_iter.next(); // consume length token
