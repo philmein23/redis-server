@@ -124,6 +124,13 @@ pub const RdbLoader = struct {
                     _ = try self.decode_length(self.next()); // str val
                     continue;
                 },
+                0xFB => {
+                    _ = self.next(); // consume FB op code
+
+                    _ = try self.decode_length(self.next()); // str key
+                    _ = try self.decode_length(self.next()); // str val
+                    continue;
+                },
                 0xFF => {
                     std.debug.print("EOF\n", .{});
                     _ = self.next(); // consume FF op code
