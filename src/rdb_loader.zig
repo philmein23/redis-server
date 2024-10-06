@@ -9,14 +9,19 @@ const StringVal = struct {
     const StringType = enum { string, integer };
 };
 
-const RdbLoader = struct {
+pub const RdbLoader = struct {
     bytes: [:0]const u8 = undefined,
     index: usize = 0,
     store: *RedisStore,
     db_index: usize,
     alloc: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator, dirname: []const u8, filename: []const u8) !RdbLoader {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        store: *RedisStore,
+        dirname: []const u8,
+        filename: []const u8,
+    ) !RdbLoader {
         const cwd = std.fs.cwd();
         const path = try std.fs.path.join(allocator, &[_][]const u8{ dirname, filename });
         defer allocator.free(path);
@@ -30,7 +35,12 @@ const RdbLoader = struct {
 
         std.debug.print("RDBLOADER BYTES READ {any}\n", .{bytes_read});
 
-        return .{ .alloc = allocator, .store = try RedisStore.init(allocator), .bytes = buffer, .db_index = undefined };
+        return .{
+            .alloc = allocator,
+            .store = store,
+            .bytes = buffer,
+            .db_index = undefined,
+        };
     }
 
     pub fn deinit(self: *RdbLoader, allocator: std.mem.Allocator) void {
@@ -258,7 +268,8 @@ const RdbLoader = struct {
 
 test "keys with expiry rdb" {
     const alloc = std.testing.allocator;
-    var rdb_loader = try RdbLoader.init(alloc, "dumps", "keys_with_expiry.rdb");
+    const store = try RedisStore.init(alloc);
+    var rdb_loader = try RdbLoader.init(alloc, store, "dumps", "keys_with_expiry.rdb");
     defer rdb_loader.deinit(alloc);
 
     _ = try rdb_loader.parse();
@@ -266,7 +277,8 @@ test "keys with expiry rdb" {
 
 test "int keys` rdb" {
     const alloc = std.testing.allocator;
-    var rdb_loader = try RdbLoader.init(alloc, "dumps", "integer_keys.rdb");
+    const store = try RedisStore.init(alloc);
+    var rdb_loader = try RdbLoader.init(alloc, store, "dumps", "integer_keys.rdb");
     defer rdb_loader.deinit(alloc);
 
     _ = try rdb_loader.parse();

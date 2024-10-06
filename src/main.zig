@@ -6,6 +6,7 @@ const Loc = @import("type.zig").Loc;
 const Tag = @import("type.zig").Tag;
 const ServerState = @import("type.zig").ServerState;
 const RedisStore = @import("store.zig").RedisStore;
+const RdbLoader = @import("rdb_loader.zig").RdbLoader;
 const Parser = @import("parser.zig").Parser;
 const Parser_ = @import("parser.zig").Parser_;
 const Command_ = @import("parser.zig").Command_;
@@ -334,14 +335,14 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var store = RedisStore.init(allocator);
-    defer store.deinit();
+    var store = try RedisStore.init(allocator);
+    var rdb_loader = try RdbLoader.init(allocator, store, state.dir, state.dbfilename);
+    try rdb_loader.parse();
 
-    // const T1 = struct { fd: [5]u8 };
-    // const t = T1{ .fd = undefined };
-    // std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
-    // std.debug.print("T1 Var address: {*}\n", .{&t});
-    // std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
+    defer {
+        store.deinit();
+        allocator.destroy(store);
+    }
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);
@@ -354,7 +355,7 @@ pub fn main() !void {
                 stdout,
                 allocator,
                 &state,
-                &store,
+                store,
             },
         );
         thread.detach();
@@ -372,7 +373,7 @@ pub fn main() !void {
                 stdout,
                 allocator,
                 &state,
-                &store,
+                store,
             },
         );
         thread.detach();
