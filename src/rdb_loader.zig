@@ -12,7 +12,7 @@ const StringVal = struct {
 const RdbLoader = struct {
     bytes: [:0]const u8 = undefined,
     index: usize = 0,
-    store: RedisStore,
+    store: *RedisStore,
     db_index: usize,
     alloc: std.mem.Allocator,
 
@@ -30,12 +30,15 @@ const RdbLoader = struct {
 
         std.debug.print("RDBLOADER BYTES READ {any}\n", .{bytes_read});
 
-        return .{ .alloc = allocator, .store = RedisStore.init(allocator), .bytes = buffer, .db_index = undefined };
+        return .{ .alloc = allocator, .store = try RedisStore.init(allocator), .bytes = buffer, .db_index = undefined };
     }
 
     pub fn deinit(self: *RdbLoader, allocator: std.mem.Allocator) void {
         allocator.free(self.bytes);
+
+        // deallocate memory in this order
         self.store.deinit();
+        self.alloc.destroy(self.store);
     }
 
     pub fn parse(self: *RdbLoader) !void {
@@ -56,11 +59,21 @@ const RdbLoader = struct {
                     std.debug.print("RDBLOADER FC SECTION - EXPIRATION {x}, {d}\n", .{ expiry, parsed_expiry });
                     self.index += 8;
 
+                    try self.process_key_value(parsed_expiry);
+
                     continue;
                 },
                 0xfd | 0xFD => {
                     std.debug.print("FD SECTION \n", .{});
                     _ = self.next(); // consume fd op code
+                    const expiry = self.bytes[self.index .. self.index + 4];
+
+                    const parsed_expiry = std.mem.readVarInt(i64, expiry, .little);
+
+                    std.debug.print("RDBLOADER FD SECTION - EXPIRATION {x}, {d}\n", .{ expiry, parsed_expiry });
+                    self.index += 4;
+
+                    try self.process_key_value(parsed_expiry);
                     continue;
                 },
                 0xfe | 0xFE => {
@@ -71,6 +84,7 @@ const RdbLoader = struct {
                     const val = try self.decode_length(len_byte);
 
                     self.db_index = val.len;
+                    self.store.db_index = self.db_index;
                 },
                 0x0 => {
                     std.debug.print("STRING VAL TYPE - 0x0\n", .{});
@@ -79,6 +93,7 @@ const RdbLoader = struct {
                     const str_key_prefix_byte = self.next(); // consume len prefixed string
 
                     const string_key = try self.decode_length(str_key_prefix_byte);
+
                     defer if (string_key.type == .integer) self.alloc.free(string_key.val);
 
                     std.debug.print("DECODE STRING: LEN: {d}, KEY: {s} \n", .{ string_key.len, string_key.val });
@@ -88,13 +103,52 @@ const RdbLoader = struct {
                     const string_val = try self.decode_length(str_val_prefix_byte);
                     defer if (string_val.type == .integer) self.alloc.free(string_val.val);
 
+                    try self.store.set(string_key.val, string_val.val, null);
                     std.debug.print("DECODE STRING: LEN: {d}, VAL: {s}\n", .{ string_val.len, string_val.val });
+                },
+                0xFA => {
+                    // read string encoded key value for header section
+                    _ = self.next(); // consume FA op code
+
+                    _ = try self.decode_length(self.next()); // str key
+                    _ = try self.decode_length(self.next()); // str val
+                    continue;
+                },
+                0xFF => {
+                    std.debug.print("EOF\n", .{});
+                    _ = self.next(); // consume FF op code
+                    break;
                 },
                 else => {
                     std.debug.print("UNKNOWN {x}\n", .{self.bytes[self.index]});
                     break;
                 },
             }
+        }
+    }
+
+    fn process_key_value(self: *RdbLoader, exp: ?i64) !void {
+        switch (self.next()) {
+            0x0 => {
+                std.debug.print("STRING VAL TYPE - 0x0\n", .{});
+
+                const str_key_prefix_byte = self.next(); // consume len prefixed string
+
+                const string_key = try self.decode_length(str_key_prefix_byte);
+
+                defer if (string_key.type == .integer) self.alloc.free(string_key.val);
+
+                std.debug.print("DECODE STRING: LEN: {d}, KEY: {s} \n", .{ string_key.len, string_key.val });
+
+                const str_val_prefix_byte = self.next(); // consume len prefixed string
+                //
+                const string_val = try self.decode_length(str_val_prefix_byte);
+                defer if (string_val.type == .integer) self.alloc.free(string_val.val);
+
+                try self.store.set(string_key.val, string_val.val, exp);
+                std.debug.print("DECODE STRING: LEN: {d}, VAL: {s}\n", .{ string_val.len, string_val.val });
+            },
+            else => {},
         }
     }
 
@@ -113,14 +167,47 @@ const RdbLoader = struct {
                 return StringVal{ .val = val, .len = len, .type = .string };
             },
             0b01 => {
-                // TODO: fill in impl later
                 std.debug.print("FIRST TWO BITS 0b01 - DECODE LENGTH\n", .{});
-                return StringVal{ .val = "test", .len = 0, .type = .string };
+                const last_six_bits = byte & 0b00111111;
+                const next_byte = self.next();
+                const to_u14 = (@as(u14, last_six_bits) << 8) | next_byte;
+                const len = @as(usize, to_u14);
+
+                const val = self.bytes[self.index .. self.index + len];
+
+                return StringVal{ .val = val, .len = 0, .type = .string };
             },
             0b10 => {
-                // TODO: fill in impl later
                 std.debug.print("FIRST TWO BITS 0b10 - DECODE LENGTH\n", .{});
-                return StringVal{ .val = "test", .len = 0, .type = .string };
+
+                switch (byte) {
+                    0x80 => {
+                        // this byte indicates the string length will be a 32 bit int
+                        const u32_val = std.mem.readInt(u32, &.{ self.next(), self.next(), self.next(), self.next() }, .big);
+
+                        const to_str = try std.fmt.allocPrint(self.alloc, "{d}", .{u32_val});
+                        return StringVal{ .val = to_str, .len = 0, .type = .integer };
+                    },
+                    0x81 => {
+                        // this byte indicates the string length will be a 64 bit int
+                        const u64_val = std.mem.readInt(u64, &.{
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                            self.next(),
+                        }, .big);
+
+                        const to_str = try std.fmt.allocPrint(self.alloc, "{d}", .{u64_val});
+                        return StringVal{ .val = to_str, .len = 0, .type = .integer };
+                    },
+                    else => {
+                        return error.CannotParseBytes;
+                    },
+                }
             },
             0b11 => {
                 const last_six_bits = byte & 0b00111111;
