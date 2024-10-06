@@ -118,6 +118,7 @@ pub const RdbLoader = struct {
                 },
                 0xFA => {
                     // read string encoded key value for header section
+                    std.debug.print("FA SECTION\n", .{});
                     _ = self.next(); // consume FA op code
 
                     _ = try self.decode_length(self.next()); // str key
@@ -125,7 +126,8 @@ pub const RdbLoader = struct {
                     continue;
                 },
                 0xFB => {
-                    _ = self.next(); // consume FB op code
+                    std.debug.print("FB SECTION\n", .{});
+                    _ = self.next(); // consume FA op code
 
                     _ = try self.decode_length(self.next()); // str key
                     _ = try self.decode_length(self.next()); // str val
@@ -134,6 +136,7 @@ pub const RdbLoader = struct {
                 0xFF => {
                     std.debug.print("EOF\n", .{});
                     _ = self.next(); // consume FF op code
+                    self.index += 8;
                     break;
                 },
                 else => {
@@ -174,9 +177,9 @@ pub const RdbLoader = struct {
 
         switch (first_two_bits) {
             0b00 => {
-                std.debug.print("FIRST TWO BITS 0b00 - DECODE LENGTH\n", .{});
                 const last_six_bits = byte & 0b00111111;
                 const len = @as(usize, @intCast(last_six_bits));
+                std.debug.print("FIRST TWO BITS 0b00 - DECODE LENGTH, INTEGER: {d}\n", .{len});
                 const val = self.bytes[self.index .. self.index + len];
 
                 self.index += len;
