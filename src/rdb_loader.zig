@@ -91,7 +91,7 @@ pub const RdbLoader = struct {
                     _ = self.next(); // consume db op code
                     const len_byte = self.next(); // consume len byte
 
-                    const val = try self.decode_length(len_byte);
+                    const val = try self.decode_length(len_byte, false);
 
                     self.db_index = val.len;
                     self.store.db_index = self.db_index;
@@ -102,7 +102,7 @@ pub const RdbLoader = struct {
 
                     const str_key_prefix_byte = self.next(); // consume len prefixed string
 
-                    const string_key = try self.decode_length(str_key_prefix_byte);
+                    const string_key = try self.decode_length(str_key_prefix_byte, true);
 
                     defer if (string_key.type == .integer) self.alloc.free(string_key.val);
 
@@ -110,7 +110,7 @@ pub const RdbLoader = struct {
 
                     const str_val_prefix_byte = self.next(); // consume len prefixed string
                     //
-                    const string_val = try self.decode_length(str_val_prefix_byte);
+                    const string_val = try self.decode_length(str_val_prefix_byte, true);
                     defer if (string_val.type == .integer) self.alloc.free(string_val.val);
 
                     try self.store.set(string_key.val, string_val.val, null);
@@ -121,16 +121,16 @@ pub const RdbLoader = struct {
                     std.debug.print("FA SECTION\n", .{});
                     _ = self.next(); // consume FA op code
 
-                    _ = try self.decode_length(self.next()); // str key
-                    _ = try self.decode_length(self.next()); // str val
+                    _ = try self.decode_length(self.next(), true); // str key
+                    _ = try self.decode_length(self.next(), true); // str val
                     continue;
                 },
                 0xFB => {
                     std.debug.print("FB SECTION\n", .{});
-                    _ = self.next(); // consume FA op code
+                    _ = self.next(); // consume FB op code
 
-                    _ = try self.decode_length(self.next()); // str key
-                    _ = try self.decode_length(self.next()); // str val
+                    _ = try self.decode_length(self.next(), false); // length
+                    _ = try self.decode_length(self.next(), false); // length
                     continue;
                 },
                 0xFF => {
@@ -154,7 +154,7 @@ pub const RdbLoader = struct {
 
                 const str_key_prefix_byte = self.next(); // consume len prefixed string
 
-                const string_key = try self.decode_length(str_key_prefix_byte);
+                const string_key = try self.decode_length(str_key_prefix_byte, true);
 
                 defer if (string_key.type == .integer) self.alloc.free(string_key.val);
 
@@ -162,7 +162,7 @@ pub const RdbLoader = struct {
 
                 const str_val_prefix_byte = self.next(); // consume len prefixed string
                 //
-                const string_val = try self.decode_length(str_val_prefix_byte);
+                const string_val = try self.decode_length(str_val_prefix_byte, true);
                 defer if (string_val.type == .integer) self.alloc.free(string_val.val);
 
                 try self.store.set(string_key.val, string_val.val, exp);
@@ -172,7 +172,7 @@ pub const RdbLoader = struct {
         }
     }
 
-    fn decode_length(self: *RdbLoader, byte: u8) !StringVal {
+    fn decode_length(self: *RdbLoader, byte: u8, is_string: bool) !StringVal {
         const first_two_bits = byte >> 6;
 
         switch (first_two_bits) {
@@ -180,11 +180,16 @@ pub const RdbLoader = struct {
                 const last_six_bits = byte & 0b00111111;
                 const len = @as(usize, @intCast(last_six_bits));
                 std.debug.print("FIRST TWO BITS 0b00 - DECODE LENGTH, INTEGER: {d}\n", .{len});
-                const val = self.bytes[self.index .. self.index + len];
 
-                self.index += len;
+                if (is_string) {
+                    const val = self.bytes[self.index .. self.index + len];
 
-                return StringVal{ .val = val, .len = len, .type = .string };
+                    self.index += len;
+
+                    return StringVal{ .val = val, .len = len, .type = .string };
+                } else {
+                    return StringVal{ .val = undefined, .len = len, .type = .integer };
+                }
             },
             0b01 => {
                 std.debug.print("FIRST TWO BITS 0b01 - DECODE LENGTH\n", .{});
@@ -193,9 +198,15 @@ pub const RdbLoader = struct {
                 const to_u14 = (@as(u14, last_six_bits) << 8) | next_byte;
                 const len = @as(usize, to_u14);
 
-                const val = self.bytes[self.index .. self.index + len];
+                if (is_string) {
+                    const val = self.bytes[self.index .. self.index + len];
 
-                return StringVal{ .val = val, .len = 0, .type = .string };
+                    self.index += len;
+
+                    return StringVal{ .val = val, .len = len, .type = .string };
+                } else {
+                    return StringVal{ .val = undefined, .len = len, .type = .integer };
+                }
             },
             0b10 => {
                 std.debug.print("FIRST TWO BITS 0b10 - DECODE LENGTH\n", .{});
