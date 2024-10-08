@@ -189,6 +189,23 @@ fn handle_connection(
 
         for (cmds) |cmd| {
             switch (cmd) {
+                .keys => {
+                    if (std.ascii.indexOfIgnoreCase(cmd.keys, "*")) |_| {
+                        std.debug.print("KEYS CMD - ASTERISK\n", .{});
+
+                        var iter = store.table.iterator();
+
+                        const entry = iter.next().?;
+
+                        std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
+                        const terminator = "\r\n";
+                        var buf: [100]u8 = undefined;
+
+                        const resp = try std.fmt.bufPrint(&buf, "*1{s}${d}{s}{s}{s}", .{ terminator, entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+
+                        _ = try stream.write(resp);
+                    }
+                },
                 .config => {
                     switch (cmd.config) {
                         .get => {
@@ -287,17 +304,7 @@ fn handle_connection(
                         },
                     }
                 },
-                // .save => {
-                //     const cwd = std.fs.cwd();
-                //
-                //     try cwd.makePath(state.dir);
-                //
-                //     const file = try cwd.createFile(try std.fs.path.join(allocator, &[_][]const u8{ state.dir, state.dbfilename }), .{});
-                //     defer file.close();
-                //
-                //     const header = [_]u8{ 'R', 'E', 'D', 'I', 'S', '0', '0', '1', '1', '2' };
-                //     _ = try file.writeAll(&header);
-                // },
+
                 .psync => {
                     try handle_psync(
                         allocator,
@@ -335,14 +342,25 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var store = try RedisStore.init(allocator);
-    var rdb_loader = try RdbLoader.init(allocator, store, state.dir, state.dbfilename);
-    try rdb_loader.parse();
+    const store = try RedisStore.init(allocator);
+    defer allocator.destroy(store);
+    var rdb_loader: ?RdbLoader = null;
 
-    defer {
-        store.deinit();
-        allocator.destroy(store);
+    if (state.role == .master) {
+        rdb_loader = RdbLoader.init(allocator, store, state.dir, state.dbfilename) catch |err| switch (err) {
+            error.FileNotFound => null,
+            error.OutOfMemory => {
+                std.debug.print("OUT OF MEMORY\n", .{});
+                return err;
+            },
+            else => return err,
+        };
+        if (rdb_loader != null) {
+            try rdb_loader.?.parse();
+        }
     }
+
+    defer if (state.role == .master) rdb_loader.?.deinit(allocator);
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);

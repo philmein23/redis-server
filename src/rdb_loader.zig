@@ -24,10 +24,12 @@ pub const RdbLoader = struct {
     ) !RdbLoader {
         const cwd = std.fs.cwd();
         const path = try std.fs.path.join(allocator, &[_][]const u8{ dirname, filename });
+
+        std.debug.print("RDBLOADER DIRNAME {s}{s}\n", .{ dirname, filename });
         defer allocator.free(path);
 
         const file = try cwd.openFile(path, .{ .mode = .read_only });
-        defer file.close();
+        errdefer file.close();
 
         const buffer = try allocator.allocSentinel(u8, try file.getEndPos(), 0);
         errdefer allocator.free(buffer);
@@ -48,7 +50,6 @@ pub const RdbLoader = struct {
 
         // deallocate memory in this order
         self.store.deinit();
-        self.alloc.destroy(self.store);
     }
 
     pub fn parse(self: *RdbLoader) !void {
@@ -290,6 +291,8 @@ pub const RdbLoader = struct {
 test "keys with expiry rdb" {
     const alloc = std.testing.allocator;
     const store = try RedisStore.init(alloc);
+    defer alloc.destroy(store);
+
     var rdb_loader = try RdbLoader.init(alloc, store, "dumps", "keys_with_expiry.rdb");
     defer rdb_loader.deinit(alloc);
 
@@ -299,6 +302,8 @@ test "keys with expiry rdb" {
 test "int keys` rdb" {
     const alloc = std.testing.allocator;
     const store = try RedisStore.init(alloc);
+    defer alloc.destroy(store);
+
     var rdb_loader = try RdbLoader.init(alloc, store, "dumps", "integer_keys.rdb");
     defer rdb_loader.deinit(alloc);
 
