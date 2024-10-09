@@ -2,17 +2,18 @@ const std = @import("std");
 const time = std.time;
 pub const RedisStore = struct {
     table: std.StringHashMap(RedisVal),
-    mutex: std.Thread.Mutex,
-    cond: std.Thread.Condition,
+    db_index: ?usize = null,
 
     const RedisVal = struct {
         val: []const u8,
         expiry: ?i64 = null,
-        db_index: ?u8 = null,
     };
 
-    pub fn init(alloc: std.mem.Allocator) RedisStore {
-        return RedisStore{ .cond = std.Thread.Condition{}, .mutex = std.Thread.Mutex{}, .table = std.StringHashMap(RedisVal).init(alloc) };
+    pub fn init(alloc: std.mem.Allocator) !*RedisStore {
+        const store = try alloc.create(RedisStore);
+        store.table = std.StringHashMap(RedisVal).init(alloc);
+
+        return store;
     }
 
     pub fn deinit(self: *RedisStore) void {
@@ -40,12 +41,8 @@ pub const RedisStore = struct {
         key: []const u8,
         val: []const u8,
         exp: ?i64,
-        db_index: ?u8,
     ) !void {
-        // self.mutex.lock();
-        // defer self.mutex.unlock();
-
-        var rv = RedisVal{ .val = val, .db_index = db_index orelse null };
+        var rv = RedisVal{ .val = val };
         if (exp) |e| {
             const now = time.milliTimestamp();
 

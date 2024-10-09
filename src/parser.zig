@@ -17,6 +17,8 @@ pub const Command_ = union(enum) {
     wait: Wait,
     echo: Echo,
     config: Config,
+    keys: []const u8,
+
     // save,
 
     const Config = union(enum) { get: []const u8 };
@@ -286,13 +288,15 @@ pub const Parser_ = struct {
                         _ = cmd_iter.next(); // consume cmd length token
 
                         const cmd_string = cmd_iter.next().?; // consume cmd string
-                        //
-                        // if (std.ascii.eqlIgnoreCase(cmd_string, "save")) {
-                        //     _ = cmd_iter.next(); // consume length token
-                        //
-                        //     try self.commands.append(Command_{ .save = {} });
-                        //     continue;
-                        // }
+
+                        if (std.ascii.eqlIgnoreCase(cmd_string, "keys")) {
+                            _ = cmd_iter.next(); // consume length token
+
+                            const glob = cmd_iter.next().?; // consume glob pattern
+
+                            try self.commands.append(Command_{ .keys = glob });
+                            continue;
+                        }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "config")) {
                             _ = cmd_iter.next(); // consume length token

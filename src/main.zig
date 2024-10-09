@@ -6,6 +6,7 @@ const Loc = @import("type.zig").Loc;
 const Tag = @import("type.zig").Tag;
 const ServerState = @import("type.zig").ServerState;
 const RedisStore = @import("store.zig").RedisStore;
+const RdbLoader = @import("rdb_loader.zig").RdbLoader;
 const Parser = @import("parser.zig").Parser;
 const Parser_ = @import("parser.zig").Parser_;
 const Command_ = @import("parser.zig").Command_;
@@ -188,13 +189,30 @@ fn handle_connection(
 
         for (cmds) |cmd| {
             switch (cmd) {
+                .keys => {
+                    if (std.ascii.indexOfIgnoreCase(cmd.keys, "*")) |_| {
+                        std.debug.print("KEYS CMD - ASTERISK\n", .{});
+
+                        var iter = store.table.iterator();
+
+                        const entry = iter.next().?;
+
+                        std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
+                        const terminator = "\r\n";
+                        var buf: [100]u8 = undefined;
+
+                        const resp = try std.fmt.bufPrint(&buf, "*1{s}${d}{s}{s}{s}", .{ terminator, entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+
+                        _ = try stream.write(resp);
+                    }
+                },
                 .config => {
                     switch (cmd.config) {
                         .get => {
                             const terminator = "\r\n";
                             var buf: [100]u8 = undefined;
                             if (std.mem.eql(u8, cmd.config.get, "dir")) {
-                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.len, terminator, state.dir, terminator });
+                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.?.len, terminator, state.dir.?, terminator });
 
                                 _ = try stream.write(resp);
                             }
@@ -286,17 +304,7 @@ fn handle_connection(
                         },
                     }
                 },
-                // .save => {
-                //     const cwd = std.fs.cwd();
-                //
-                //     try cwd.makePath(state.dir);
-                //
-                //     const file = try cwd.createFile(try std.fs.path.join(allocator, &[_][]const u8{ state.dir, state.dbfilename }), .{});
-                //     defer file.close();
-                //
-                //     const header = [_]u8{ 'R', 'E', 'D', 'I', 'S', '0', '0', '1', '1', '2' };
-                //     _ = try file.writeAll(&header);
-                // },
+
                 .psync => {
                     try handle_psync(
                         allocator,
@@ -334,14 +342,26 @@ pub fn main() !void {
     });
     defer server.deinit();
 
-    var store = RedisStore.init(allocator);
-    defer store.deinit();
+    const store = try RedisStore.init(allocator);
+    defer allocator.destroy(store);
+    var rdb_loader: ?RdbLoader = null;
 
-    // const T1 = struct { fd: [5]u8 };
-    // const t = T1{ .fd = undefined };
-    // std.debug.print("TEST ALIGNOF: {}\n", .{@alignOf(T1)});
-    // std.debug.print("T1 Var address: {*}\n", .{&t});
-    // std.debug.print("T1 fd field address: {*}\n", .{&t.fd});
+    if (state.role == .master and state.dir != null and state.dbfilename != null) {
+        std.debug.print("RDBLOADER PATH TO ALLOCATE\n {any}{?s}{?s}\n", .{ state.role, state.dir, state.dbfilename });
+        rdb_loader = RdbLoader.init(allocator, store, state.dir.?, state.dbfilename.?) catch |err| switch (err) {
+            error.FileNotFound => null,
+            error.OutOfMemory => {
+                std.debug.print("OUT OF MEMORY\n", .{});
+                return err;
+            },
+            else => return err,
+        };
+        if (rdb_loader != null) {
+            try rdb_loader.?.parse();
+        }
+    }
+
+    defer if (state.role == .master) rdb_loader.?.deinit(allocator);
 
     if (state.master_port != null) {
         const replica_stream = try handle_handshake(&state, allocator);
@@ -354,7 +374,7 @@ pub fn main() !void {
                 stdout,
                 allocator,
                 &state,
-                &store,
+                store,
             },
         );
         thread.detach();
@@ -372,7 +392,7 @@ pub fn main() !void {
                 stdout,
                 allocator,
                 &state,
-                &store,
+                store,
             },
         );
         thread.detach();
