@@ -23,9 +23,10 @@ pub const RdbLoader = struct {
         filename: []const u8,
     ) !RdbLoader {
         const cwd = std.fs.cwd();
+
         const path = try std.fs.path.join(allocator, &[_][]const u8{ dirname, filename });
 
-        std.debug.print("RDBLOADER DIRNAME {s}{s}\n", .{ dirname, filename });
+        std.debug.print("RDBLOADER PATH SIZE\n {d}\n", .{path.len});
         defer allocator.free(path);
 
         const file = try cwd.openFile(path, .{ .mode = .read_only });

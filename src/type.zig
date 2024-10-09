@@ -42,8 +42,8 @@ pub const ServerState = struct {
     allocator: std.mem.Allocator,
     cmd_bytes_count: ?usize = null,
     offset: usize = 0,
-    dir: []const u8 = undefined,
-    dbfilename: []const u8 = undefined,
+    dir: ?[]const u8 = null,
+    dbfilename: ?[]const u8 = null,
 
     pub fn init(allocator: std.mem.Allocator) ServerState {
         const replicas_2 = std.AutoHashMap(std.posix.fd_t, *Replica).init(allocator);

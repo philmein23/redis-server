@@ -212,7 +212,7 @@ fn handle_connection(
                             const terminator = "\r\n";
                             var buf: [100]u8 = undefined;
                             if (std.mem.eql(u8, cmd.config.get, "dir")) {
-                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.len, terminator, state.dir, terminator });
+                                const resp = try std.fmt.bufPrint(&buf, "*2{s}$3{s}dir{s}${d}{s}{s}{s}", .{ terminator, terminator, terminator, state.dir.?.len, terminator, state.dir.?, terminator });
 
                                 _ = try stream.write(resp);
                             }
@@ -346,8 +346,9 @@ pub fn main() !void {
     defer allocator.destroy(store);
     var rdb_loader: ?RdbLoader = null;
 
-    if (state.role == .master) {
-        rdb_loader = RdbLoader.init(allocator, store, state.dir, state.dbfilename) catch |err| switch (err) {
+    if (state.role == .master and state.dir != null and state.dbfilename != null) {
+        std.debug.print("RDBLOADER PATH TO ALLOCATE\n {any}{?s}{?s}\n", .{ state.role, state.dir, state.dbfilename });
+        rdb_loader = RdbLoader.init(allocator, store, state.dir.?, state.dbfilename.?) catch |err| switch (err) {
             error.FileNotFound => null,
             error.OutOfMemory => {
                 std.debug.print("OUT OF MEMORY\n", .{});
