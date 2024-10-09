@@ -194,16 +194,34 @@ fn handle_connection(
                         std.debug.print("KEYS CMD - ASTERISK\n", .{});
 
                         var iter = store.table.iterator();
-
-                        const entry = iter.next().?;
-
-                        std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
                         const terminator = "\r\n";
+
+                        var key_list = std.ArrayList(u8).init(allocator);
+                        defer key_list.deinit();
+
+                        var final_output = std.ArrayList(u8).init(allocator);
+                        defer final_output.deinit();
+
+                        var count: usize = 0;
+
+                        while (iter.next()) |entry| {
+                            std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
+
+                            var buf: [100]u8 = undefined;
+
+                            const resp = try std.fmt.bufPrint(&buf, "${d}{s}{s}{s}", .{ entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+
+                            try key_list.appendSlice(resp);
+
+                            count += 1;
+                        }
+
                         var buf: [100]u8 = undefined;
+                        try final_output.appendSlice(try std.fmt.bufPrint(&buf, "*{d}{s}", .{ count, terminator }));
 
-                        const resp = try std.fmt.bufPrint(&buf, "*1{s}${d}{s}{s}{s}", .{ terminator, entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+                        try final_output.appendSlice(try key_list.toOwnedSlice());
 
-                        _ = try stream.write(resp);
+                        _ = try stream.write(try final_output.toOwnedSlice());
                     }
                 },
                 .config => {
