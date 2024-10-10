@@ -24,6 +24,7 @@ pub const RedisStore = struct {
         if (self.table.get(key)) |v| {
             if (v.expiry) |exp| {
                 const now = time.milliTimestamp();
+                std.debug.print("GET - NOW: {d}, EXP: {d}\n", .{ now, exp });
                 if (now < exp) {
                     return v.val;
                 } else {

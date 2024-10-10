@@ -64,14 +64,25 @@ pub const RdbLoader = struct {
                 0xfc | 0xFC => {
                     std.debug.print("FC SECTION \n", .{});
                     _ = self.next(); // consume fc op code
-                    const expiry = self.bytes[self.index .. self.index + 8];
+                    // const expiry = self.bytes[self.index .. self.index + 8];
+                    //
+                    // const parsed_expiry = std.mem.readVarInt(u64, expiry, .little);
+                    const parsed_expiry = std.mem.readInt(u64, &.{
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                        self.next(),
+                    }, .little);
 
-                    const parsed_expiry = std.mem.readVarInt(i64, expiry, .little);
+                    const converted_exp = @as(i64, @intCast(parsed_expiry));
 
-                    std.debug.print("RDBLOADER FC SECTION - EXPIRATION {x}, {d}\n", .{ expiry, parsed_expiry });
-                    self.index += 8;
+                    std.debug.print("RDBLOADER FC SECTION - EXPIRATION , {d}\n", .{converted_exp});
 
-                    try self.process_key_value(parsed_expiry);
+                    try self.process_key_value(converted_exp);
 
                     continue;
                 },
@@ -82,10 +93,12 @@ pub const RdbLoader = struct {
 
                     const parsed_expiry = std.mem.readVarInt(i64, expiry, .little);
 
-                    std.debug.print("RDBLOADER FD SECTION - EXPIRATION {x}, {d}\n", .{ expiry, parsed_expiry });
+                    const converted_exp = @as(i64, @intCast(parsed_expiry));
+
+                    std.debug.print("RDBLOADER FD SECTION - EXPIRATION {x}, {d}\n", .{ expiry, converted_exp });
                     self.index += 4;
 
-                    try self.process_key_value(parsed_expiry);
+                    try self.process_key_value(converted_exp);
                     continue;
                 },
                 0xfe | 0xFE => {
