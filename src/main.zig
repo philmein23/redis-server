@@ -59,7 +59,7 @@ fn handle_get(
     store: *RedisStore,
     key: []const u8,
 ) !void {
-    const val = store.get(key) catch |err| switch (err) {
+    const rv = store.get(key) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
             _ = try stream.write("$-1\r\n");
 
@@ -69,9 +69,9 @@ fn handle_get(
     };
 
     const terminator = "\r\n";
-    const length = val.len;
+    const length = rv.val.len;
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, rv.val, terminator });
     defer allocator.free(resp);
 
     _ = try stream.write(resp);
@@ -189,6 +189,22 @@ fn handle_connection(
 
         for (cmds) |cmd| {
             switch (cmd) {
+                .type => {
+                    const key_name = cmd.type;
+
+                    const rv = store.get(key_name) catch |err| switch (err) {
+                        else => {
+                            _ = try stream.write("+none\r\n");
+                            return;
+                        },
+                    };
+
+                    switch (rv.type) {
+                        .string => {
+                            _ = try stream.write("+string\r\n");
+                        },
+                    }
+                },
                 .keys => {
                     if (std.ascii.indexOfIgnoreCase(cmd.keys, "*")) |_| {
                         std.debug.print("KEYS CMD - ASTERISK\n", .{});
