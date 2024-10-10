@@ -42,9 +42,13 @@ pub const RedisStore = struct {
         key: []const u8,
         val: []const u8,
         exp: ?i64,
+        exp_timestamp: ?i64,
     ) !void {
         var rv = RedisVal{ .val = val };
-        if (exp) |e| {
+
+        if (exp_timestamp) |exp_ts| {
+            rv.expiry = exp_ts;
+        } else if (exp) |e| {
             const now = time.milliTimestamp();
 
             rv.expiry = now + e;

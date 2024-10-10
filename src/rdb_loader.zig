@@ -128,7 +128,7 @@ pub const RdbLoader = struct {
                     const string_val = try self.decode_length(str_val_prefix_byte, true);
                     defer if (string_val.type == .integer) self.alloc.free(string_val.val);
 
-                    try self.store.set(string_key.val, string_val.val, null);
+                    try self.store.set(string_key.val, string_val.val, null, null);
                     std.debug.print("DECODE STRING: LEN: {d}, VAL: {s}\n", .{ string_val.len, string_val.val });
                 },
                 0xFA => {
@@ -180,7 +180,7 @@ pub const RdbLoader = struct {
                 const string_val = try self.decode_length(str_val_prefix_byte, true);
                 defer if (string_val.type == .integer) self.alloc.free(string_val.val);
 
-                try self.store.set(string_key.val, string_val.val, exp);
+                try self.store.set(string_key.val, string_val.val, null, exp);
                 std.debug.print("DECODE STRING: LEN: {d}, VAL: {s}\n", .{ string_val.len, string_val.val });
             },
             else => {},

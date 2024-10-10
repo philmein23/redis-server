@@ -262,7 +262,7 @@ fn handle_connection(
                     }
                 },
                 .set => {
-                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
+                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px, null);
 
                     switch (state.role) {
                         .master => {
