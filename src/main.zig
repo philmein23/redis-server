@@ -59,7 +59,7 @@ fn handle_get(
     store: *RedisStore,
     key: []const u8,
 ) !void {
-    const val = store.get(key) catch |err| switch (err) {
+    const rv = store.get(key) catch |err| switch (err) {
         error.KeyHasExceededExpirationThreshold => {
             _ = try stream.write("$-1\r\n");
 
@@ -69,9 +69,9 @@ fn handle_get(
     };
 
     const terminator = "\r\n";
-    const length = val.len;
+    const length = rv.val.len;
 
-    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, val, terminator });
+    const resp = try std.fmt.allocPrint(allocator, "${d}{s}{s}{s}", .{ length, terminator, rv.val, terminator });
     defer allocator.free(resp);
 
     _ = try stream.write(resp);
@@ -189,21 +189,55 @@ fn handle_connection(
 
         for (cmds) |cmd| {
             switch (cmd) {
+                .type => {
+                    const key_name = cmd.type;
+
+                    const rv = store.get(key_name) catch |err| switch (err) {
+                        else => {
+                            _ = try stream.write("+none\r\n");
+                            return;
+                        },
+                    };
+
+                    switch (rv.type) {
+                        .string => {
+                            _ = try stream.write("+string\r\n");
+                        },
+                    }
+                },
                 .keys => {
                     if (std.ascii.indexOfIgnoreCase(cmd.keys, "*")) |_| {
                         std.debug.print("KEYS CMD - ASTERISK\n", .{});
 
                         var iter = store.table.iterator();
-
-                        const entry = iter.next().?;
-
-                        std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
                         const terminator = "\r\n";
+
+                        var key_list = std.ArrayList(u8).init(allocator);
+                        defer key_list.deinit();
+
+                        var final_output = std.ArrayList(u8).init(allocator);
+                        defer final_output.deinit();
+
+                        var count: usize = 0;
+
+                        while (iter.next()) |entry| {
+                            std.debug.print("KEYS CMD - ASTERISK KEY {s}\n", .{entry.key_ptr.*});
+
+                            var buf: [100]u8 = undefined;
+
+                            const resp = try std.fmt.bufPrint(&buf, "${d}{s}{s}{s}", .{ entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+
+                            try key_list.appendSlice(resp);
+
+                            count += 1;
+                        }
+
                         var buf: [100]u8 = undefined;
+                        try final_output.appendSlice(try std.fmt.bufPrint(&buf, "*{d}{s}", .{ count, terminator }));
 
-                        const resp = try std.fmt.bufPrint(&buf, "*1{s}${d}{s}{s}{s}", .{ terminator, entry.key_ptr.*.len, terminator, entry.key_ptr.*, terminator });
+                        try final_output.appendSlice(try key_list.toOwnedSlice());
 
-                        _ = try stream.write(resp);
+                        _ = try stream.write(try final_output.toOwnedSlice());
                     }
                 },
                 .config => {
@@ -244,7 +278,7 @@ fn handle_connection(
                     }
                 },
                 .set => {
-                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px);
+                    try store.set(cmd.set.key, cmd.set.val, cmd.set.px, null);
 
                     switch (state.role) {
                         .master => {

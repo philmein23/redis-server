@@ -7,6 +7,9 @@ pub const RedisStore = struct {
     const RedisVal = struct {
         val: []const u8,
         expiry: ?i64 = null,
+        type: Type,
+
+        const Type = enum { string };
     };
 
     pub fn init(alloc: std.mem.Allocator) !*RedisStore {
@@ -20,17 +23,17 @@ pub const RedisStore = struct {
         self.table.deinit();
     }
 
-    pub fn get(self: *RedisStore, key: []const u8) ![]const u8 {
+    pub fn get(self: *RedisStore, key: []const u8) !RedisVal {
         if (self.table.get(key)) |v| {
             if (v.expiry) |exp| {
                 const now = time.milliTimestamp();
                 if (now < exp) {
-                    return v.val;
+                    return v;
                 } else {
                     return error.KeyHasExceededExpirationThreshold;
                 }
             }
-            return v.val;
+            return v;
         } else {
             return error.NoValueExistforGivenKey;
         }
@@ -41,9 +44,13 @@ pub const RedisStore = struct {
         key: []const u8,
         val: []const u8,
         exp: ?i64,
+        exp_timestamp: ?i64,
     ) !void {
-        var rv = RedisVal{ .val = val };
-        if (exp) |e| {
+        var rv = RedisVal{ .val = val, .type = .string };
+
+        if (exp_timestamp) |exp_ts| {
+            rv.expiry = exp_ts;
+        } else if (exp) |e| {
             const now = time.milliTimestamp();
 
             rv.expiry = now + e;

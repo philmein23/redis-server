@@ -18,9 +18,9 @@ pub const Command_ = union(enum) {
     echo: Echo,
     config: Config,
     keys: []const u8,
+    type: []const u8,
 
     // save,
-
     const Config = union(enum) { get: []const u8 };
 
     const Echo = []const u8;
@@ -288,6 +288,15 @@ pub const Parser_ = struct {
                         _ = cmd_iter.next(); // consume cmd length token
 
                         const cmd_string = cmd_iter.next().?; // consume cmd string
+
+                        if (std.ascii.eqlIgnoreCase(cmd_string, "type")) {
+                            _ = cmd_iter.next(); // consume length token
+
+                            const key_name = cmd_iter.next().?; // consume key name
+
+                            try self.commands.append(Command_{ .type = key_name });
+                            continue;
+                        }
 
                         if (std.ascii.eqlIgnoreCase(cmd_string, "keys")) {
                             _ = cmd_iter.next(); // consume length token
@@ -634,5 +643,19 @@ test "parsing replconf ack command" {
     for (cmds) |cmd| {
         try std.testing.expectEqual(Command_.replconf, std.meta.activeTag(cmd));
         try std.testing.expectEqual(0, cmd.replconf.ack);
+    }
+}
+
+test "test type command" {
+    const type_bytes = "*2\r\n$4\r\nTYPE\r\n$5\r\napple\r\n";
+    const gpa = std.testing.allocator;
+    var parser = try Parser_.init(gpa, type_bytes);
+
+    const cmds = try parser.parse_();
+    defer gpa.free(cmds);
+
+    for (cmds) |cmd| {
+        try std.testing.expectEqual(Command_.type, std.meta.activeTag(cmd));
+        try std.testing.expectEqualSlices(u8, "apple", cmd.type);
     }
 }
